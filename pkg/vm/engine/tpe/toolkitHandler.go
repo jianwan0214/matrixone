@@ -58,6 +58,7 @@ func Trace(format string,args ...interface{}) {
 }
 
 func DumpDatabaseInfo(eng vm_engine.Engine, args []string) error {
+    fmt.Println("wangjian sql3 is")
     if len(args) < 2 {
         return nil
     }
@@ -68,7 +69,7 @@ func DumpDatabaseInfo(eng vm_engine.Engine, args []string) error {
     }
 
     if opt.Filename != "" {
-        file, err := os.OpenFile(opt.Filename, os.O_RDWR | os.O_EXCL | os.O_CREATE, 0o666)
+        file, err := os.OpenFile(opt.Filename, os.O_RDWR | os.O_CREATE, 0o666)
         if err != nil {
             return err
         }
@@ -194,6 +195,7 @@ func getTableData(tr *engine.TpeReader, refCnts []uint64, attrs []string, opt* b
         // result.Decode_values.Vecs = result.Decode_values.Vecs[opt.Limit[0]:opt.Limit[0] + opt.Limit[1]]
     }
 
+    fmt.Println("wangjian sql1 is", result)
     if opt.Filename == "" {
         dumpTableDataToshell(opt, result)
     } else {

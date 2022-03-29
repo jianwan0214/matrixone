@@ -190,8 +190,24 @@ func (tr *  TpeReader) DumpRead(refCnts []uint64, attrs []string, opt *batch.Dum
 			IndexDesc:                &tr.tableDesc.Primary_index,
 			ReadAttributesNames:      attrs,
 			ReadAttributeDescs:       readAttrs,
-			PrefixForScanKey:         nil,
-			LengthOfPrefixForScanKey: 0,
+			ParallelReader: tr.parallelReader,
+			ReadCount: 0,
+		}
+
+		if tr.readCtx.ParallelReader {
+			tr.readCtx.ParallelReaderContext = tuplecodec.ParallelReaderContext{
+				ShardIndex: 0,
+				ShardStartKey: tr.shardInfos[0].startKey,
+				ShardEndKey: tr.shardInfos[0].endKey,
+				ShardNextScanKey: tr.shardInfos[0].startKey,
+				CompleteInShard: tr.shardInfos[0].completeInShard,
+			}
+		}else{
+			tr.readCtx.SingleReaderContext = tuplecodec.SingleReaderContext{
+				CompleteInAllShards: false,
+				PrefixForScanKey:         nil,
+				LengthOfPrefixForScanKey: 0,
+			}
 		}
 	}else{
 		//check if these attrs are same as last attrs
@@ -204,8 +220,23 @@ func (tr *  TpeReader) DumpRead(refCnts []uint64, attrs []string, opt *batch.Dum
 				return nil, errorDifferentReadAttributesInSameReader
 			}
 		}
-	}
 
+		if tr.readCtx.ParallelReader {
+			//update new shard if needed
+			if tr.readCtx.CompleteInShard {
+				tr.shardInfos[tr.readCtx.ShardIndex].completeInShard = true
+				tr.readCtx.ShardIndex++
+				if tr.readCtx.ShardIndex < len(tr.shardInfos) {
+					tr.readCtx.ShardStartKey = tr.shardInfos[tr.readCtx.ShardIndex].startKey
+					tr.readCtx.ShardEndKey = tr.shardInfos[tr.readCtx.ShardIndex].endKey
+					tr.readCtx.ShardNextScanKey = tr.shardInfos[tr.readCtx.ShardIndex].nextScanKey
+					tr.readCtx.CompleteInShard = false
+				}else{
+					return nil,nil
+				}
+			}
+		}
+	}
 	result, err := tr.computeHandler.DumpRead(tr.readCtx, opt)
 	if err != nil {
 		return nil, err

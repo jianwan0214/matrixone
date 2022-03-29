@@ -16,6 +16,7 @@ package tuplecodec
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
@@ -316,11 +317,14 @@ func (ihi * IndexHandlerImpl) ReadFromIndex(readCtx interface{}) (*batch.Batch, 
 }
 
 func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.DumpOption) (*batch.DumpResult, int, error) {
+	fmt.Println("wangjian sql2 is")
 	indexReadCtx,ok := readCtx.(*ReadContext)
 	if !ok {
 		return nil, 0, errorReadContextIsInvalid
 	}
-
+	
+	result := &batch.DumpResult{}
+	
 	//check if we need the index key only.
 	//Attributes we want are in the index key only.
 	indexAttrIDs := descriptor.ExtractIndexAttributeIDs(indexReadCtx.IndexDesc.Attributes)
@@ -331,12 +335,14 @@ func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.
 		if _,exist := indexAttrIDs[attr.ID]; exist {
 			//id in the key
 			amForKey.Append(int(attr.ID),i)
+			result.Decode_keys.Attrs = append(result.Decode_keys.Attrs, attr.Name)
 		}else{
 			//id is not in the index key
 			//then find it in the value
 			needKeyOnly = false
 			amForValue.Append(int(attr.ID),i)
 		}
+		result.Decode_values.Attrs = append(result.Decode_values.Attrs, attr.Name)
 	}
 
 	//1.encode prefix (tenantID,dbID,tableID,indexID)
@@ -357,6 +363,8 @@ func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.
 	//prepare the batch
 	names,attrdefs := ConvertAttributeDescIntoTypesType(indexReadCtx.ReadAttributeDescs)
 	bat := MakeBatch(int(ihi.kvLimit),names,attrdefs)
+	result.Decode_keys.Vecs = make([]batch.DumpDecodeItem, len(result.Decode_keys.Attrs))
+	result.Decode_values.Vecs = make([]batch.DumpDecodeItem, len(result.Decode_values.Attrs))
 
 	rowRead := 0
 	readFinished := false
@@ -374,6 +382,12 @@ func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.
 		}
 
 		rowRead += len(keys)
+		for _, key := range keys {
+			result.Keys = append(result.Keys, []byte(key))
+		}
+		for _, value := range values {
+			result.Values = append(result.Values, []byte(value))
+		}
 
 		//1.decode index key
 		//2.get fields wanted
@@ -384,11 +398,10 @@ func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.
 				return nil, 0, err
 			}
 
-			//pick wanted fields and save them in the batch
-			err = ihi.rcc.FillBatchFromDecodedIndexKey(indexReadCtx.IndexDesc,
-				0, dis, amForKey, bat, i)
-			if err != nil {
-				return nil, 0, err
+			fmt.Println("wangjian sqlA is")
+			for j, key := range dis {
+				fmt.Println("wangjian sqlkey is", key.Value)
+				result.Decode_keys.Vecs[j] = append(result.Decode_keys.Vecs[j], key.Value)
 			}
 		}
 
@@ -399,18 +412,16 @@ func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.
 			for i := 0; i < len(keys); i++ {
 				//decode the name which is in the value
 				data := values[i]
-				_,dis,err := tkd.DecodePrimaryIndexValue(data,
-					indexReadCtx.IndexDesc,0,ihi.serializer)
+				_,dis,err := tkd.DecodePrimaryIndexValue(data, indexReadCtx.IndexDesc,0,ihi.serializer)
 				if err != nil {
 					return nil, 0, err
 				}
-
-				//pick wanted fields and save them in the batch
-				err = ihi.rcc.FillBatchFromDecodedIndexValue(indexReadCtx.IndexDesc,
-					0, dis,amForValue, bat, i)
-				if err != nil {
-					return nil, 0, err
+				fmt.Println("wangjian sqlB is")
+				for j, value := range dis {
+					fmt.Println("wangjian sqlValue is", value.Value)
+					result.Decode_values.Vecs[j] = append(result.Decode_values.Vecs[j], value.Value)
 				}
+				
 			}
 		}
 
@@ -434,8 +445,8 @@ func (ihi * IndexHandlerImpl) DumpReadFromIndex(readCtx interface{}, opt *batch.
 			bat = nil
 		}
 	}
-
-	return nil, rowRead, nil
+	fmt.Println("wangjian sqlresult is", result)
+	return result, rowRead, nil
 }
 
 func (ihi * IndexHandlerImpl) WriteIntoTable(table *descriptor.RelationDesc, writeCtx interface{}, bat *batch.Batch) error {
