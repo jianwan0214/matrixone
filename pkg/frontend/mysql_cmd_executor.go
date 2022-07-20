@@ -859,10 +859,12 @@ func (mce *MysqlCmdExecutor) handleLoadData(load *tree.Load) error {
 	/*
 		execute load data
 	*/
+	fmt.Println("wangjian sql1 is", loadDb)
 	result, err := mce.LoadLoop(load, dbHandler, tableHandler, loadDb)
 	if err != nil {
 		return err
 	}
+	loadFromExternal()
 
 	/*
 		response

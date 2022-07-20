@@ -16,6 +16,8 @@ package tree
 
 import (
 	"bufio"
+	"context"
+	"io"
 	"os"
 	"strconv"
 )
@@ -110,6 +112,72 @@ func NewUpdateExpr(t bool, n []*UnresolvedName, e Expr) *UpdateExpr {
 	}
 }
 
+// ExternalStorage represents a kind of file system storage.
+type ExternalStorage interface {
+	// WriteFile writes a complete file to storage, similar to os.WriteFile, but WriteFile should be atomic
+	WriteFile(ctx context.Context, name string, data []byte) error
+	// ReadFile reads a complete file from storage, similar to os.ReadFile
+	ReadFile(ctx context.Context, name string) ([]byte, error)
+	// FileExists return true if file exists
+	FileExists(ctx context.Context, name string) (bool, error)
+	// DeleteFile delete the file in storage
+	DeleteFile(ctx context.Context, name string) error
+	// Open a Reader by file path. path is relative path to storage base path
+	Open(ctx context.Context, path string) (ExternalFileReader, error)
+	// WalkDir traverse all the files in a dir.
+	//
+	// fn is the function called for each regular file visited by WalkDir.
+	// The argument `path` is the file path that can be used in `Open`
+	// function; the argument `size` is the size in byte of the file determined
+	// by path.
+	WalkDir(ctx context.Context, opt *WalkOption, fn func(path string, size int64) error) error
+
+	// URI returns the base path as a URI
+	URI() string
+
+	// Create opens a file writer by path. path is relative path to storage base path
+	Create(ctx context.Context, path string) (ExternalFileWriter, error)
+	// Rename file name from oldFileName to newFileName
+	Rename(ctx context.Context, oldFileName, newFileName string) error
+}
+
+// ExternalFileReader represents the streaming external file reader.
+type ExternalFileReader interface {
+	io.ReadCloser
+	io.Seeker
+}
+
+// WalkOption is the option of storage.WalkDir.
+type WalkOption struct {
+	// walk on SubDir of specify directory
+	SubDir string
+	// ObjPrefix used fo prefix search in storage.
+	// it can save lots of time when we want find specify prefix objects in storage.
+	// For example. we have 10000 <Hash>.sst files and 10 backupmeta.(\d+) files.
+	// we can use ObjPrefix = "backupmeta" to retrieve all meta files quickly.
+	ObjPrefix string
+	// ListCount is the number of entries per page.
+	//
+	// In cloud storages such as S3 and GCS, the files listed and sent in pages.
+	// Typically a page contains 1000 files, and if a folder has 3000 descendant
+	// files, one would need 3 requests to retrieve all of them. This parameter
+	// controls this size. Note that both S3 and GCS limits the maximum to 1000.
+	//
+	// Typically you want to leave this field unassigned (zero) to use the
+	// default value (1000) to minimize the number of requests, unless you want
+	// to reduce the possibility of timeout on an extremely slow connection, or
+	// perform testing.
+	ListCount int64
+}
+
+// ExternalFileWriter represents the streaming external file writer.
+type ExternalFileWriter interface {
+	// Write writes to buffer and if chunk is filled will upload it
+	Write(ctx context.Context, p []byte) (int, error)
+	// Close writes final chunk and completes the upload
+	Close(ctx context.Context) error
+}
+
 //Load data statement
 type Load struct {
 	statementImpl
@@ -128,6 +196,8 @@ type Load struct {
 	ColumnList []LoadColumn
 	//set col_name
 	Assignments UpdateExprs
+	// 
+	ExtStorage   ExternalStorage `json:"-"`
 }
 
 func (node *Load) Format(ctx *FmtCtx) {

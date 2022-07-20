@@ -1969,6 +1969,7 @@ func PrintThreadInfo(handler *ParseLineHandler, close *CloseFlag, a time.Duratio
 LoadLoop reads data from stream, extracts the fields, and saves into the table
 */
 func (mce *MysqlCmdExecutor) LoadLoop(load *tree.Load, dbHandler engine.Database, tableHandler engine.Relation, dbName string) (*LoadResult, error) {
+	return &LoadResult{}, nil
 	ses := mce.GetSession()
 
 	var m sync.Mutex
@@ -1982,6 +1983,7 @@ func (mce *MysqlCmdExecutor) LoadLoop(load *tree.Load, dbHandler engine.Database
 	/*
 		step1 : read block from file
 	*/
+	var dataFile *os.File
 	dataFile, err := os.Open(load.File)
 	if err != nil {
 		logutil.Errorf("open file failed. err:%v", err)
