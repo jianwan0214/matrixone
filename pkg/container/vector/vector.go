@@ -223,6 +223,52 @@ func (v *Vector) ToConst(row int) *Vector {
 	return nil
 }
 
+func (v *Vector) Alloc(rows int, m *mheap.Mheap) *Vector {
+	switch v.Typ.Oid {
+	case types.T_bool:
+		alloc[bool](v, 1, rows, m)
+	case types.T_int8:
+		alloc[int8](v, 1, rows, m)
+	case types.T_int16:
+		alloc[int16](v, 2, rows, m)
+	case types.T_int32:
+		alloc[int32](v, 4, rows, m)
+	case types.T_int64:
+		alloc[int64](v, 8, rows, m)
+	case types.T_uint8:
+		alloc[uint8](v, 1, rows, m)
+	case types.T_uint16:
+		alloc[uint16](v, 2, rows, m)
+	case types.T_uint32:
+		alloc[uint32](v, 4, rows, m)
+	case types.T_uint64:
+		alloc[uint64](v, 8, rows, m)
+	case types.T_float32:
+		alloc[float32](v, 4, rows, m)
+	case types.T_float64:
+		alloc[float64](v, 8, rows, m)
+	case types.T_date:
+		alloc[types.Date](v, 4, rows, m)
+	case types.T_datetime:
+		alloc[types.Datetime](v, 8, rows, m)
+	case types.T_timestamp:
+		alloc[types.Timestamp](v, 8, rows, m)
+	case types.T_decimal64:
+		alloc[types.Decimal64](v, 8, rows, m)
+	case types.T_decimal128:
+		alloc[types.Decimal128](v, 16, rows, m)
+	case types.T_char, types.T_varchar, types.T_json, types.T_blob:
+		v.Col = &types.Bytes{
+			Data:    nil,
+			Offsets: make([]uint32, rows),
+			Lengths: make([]uint32, rows),
+		}
+		v.Data = make([]byte, rows)
+	}
+	v.IsConst = false
+	return v
+}
+
 func (v *Vector) ConstExpand(m *mheap.Mheap) *Vector {
 	if !v.IsConst {
 		return v
@@ -350,6 +396,17 @@ func expandVector[T any](v *Vector, sz int, m *mheap.Mheap) *Vector {
 	}
 	v.Col = vs
 	v.Data = data[:len(vs)*sz]
+	return v
+}
+
+func alloc[T any](v *Vector, sz int, rows int, m *mheap.Mheap) *Vector {
+	data, err := mheap.Alloc(m, int64(sz*rows))
+	if err != nil {
+		return nil
+	}
+	vs := types.DecodeFixedSlice[T](data, sz)
+	v.Col = vs
+	v.Data = data
 	return v
 }
 

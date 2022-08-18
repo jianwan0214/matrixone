@@ -365,80 +365,21 @@ func judgeInterge(field string) bool {
 	return true
 }
 
-func makeBatch(param *ExternalParam, plh *ParseLineHandler) *batch.Batch {
+func makeBatch(param *ExternalParam, plh *ParseLineHandler, proc *process.Process) *batch.Batch {
 	batchData := batch.New(true, param.Attrs)
 	batchSize := plh.batchSize
-	//alloc space for vector
+	// alloc space for vector
 	for i := 0; i < len(param.Attrs); i++ {
 		typ := types.New(types.T(param.Cols[i].Typ.Id), param.Cols[i].Typ.Width, param.Cols[i].Typ.Scale, param.Cols[i].Typ.Precision)
 		vec := vector.New(typ)
-		switch vec.Typ.Oid {
-		case types.T_bool:
-			vec.Col = make([]bool, batchSize)
-			vec.Data = make([]byte, batchSize)
-		case types.T_int8:
-			vec.Col = make([]int8, batchSize)
-			vec.Data = make([]byte, batchSize)
-		case types.T_int16:
-			vec.Col = make([]int16, batchSize)
-			vec.Data = make([]byte, 2*batchSize)
-		case types.T_int32:
-			vec.Col = make([]int32, batchSize)
-			vec.Data = make([]byte, 4*batchSize)
-		case types.T_int64:
-			vec.Col = make([]int64, batchSize)
-			vec.Data = make([]byte, 8*batchSize)
-		case types.T_uint8:
-			vec.Col = make([]uint8, batchSize)
-			vec.Data = make([]byte, batchSize)
-		case types.T_uint16:
-			vec.Col = make([]uint16, batchSize)
-			vec.Data = make([]byte, 2*batchSize)
-		case types.T_uint32:
-			vec.Col = make([]uint32, batchSize)
-			vec.Data = make([]byte, 4*batchSize)
-		case types.T_uint64:
-			vec.Col = make([]uint64, batchSize)
-			vec.Data = make([]byte, 8*batchSize)
-		case types.T_float32:
-			vec.Col = make([]float32, batchSize)
-			vec.Data = make([]byte, 4*batchSize)
-		case types.T_float64:
-			vec.Col = make([]float64, batchSize)
-			vec.Data = make([]byte, 8*batchSize)
-		case types.T_char, types.T_varchar, types.T_json:
-			vBytes := &types.Bytes{
-				Offsets: make([]uint32, batchSize),
-				Lengths: make([]uint32, batchSize),
-				Data:    nil,
-			}
-			vec.Col = vBytes
-			vec.Data = make([]byte, batchSize)
-		case types.T_date:
-			vec.Col = make([]types.Date, batchSize)
-			vec.Data = make([]byte, 4*batchSize)
-		case types.T_datetime:
-			vec.Col = make([]types.Datetime, batchSize)
-			vec.Data = make([]byte, 8*batchSize)
-		case types.T_decimal64:
-			vec.Col = make([]types.Decimal64, batchSize)
-			vec.Data = make([]byte, 8*batchSize)
-		case types.T_decimal128:
-			vec.Col = make([]types.Decimal128, batchSize)
-			vec.Data = make([]byte, 16*batchSize)
-		case types.T_timestamp:
-			vec.Col = make([]types.Timestamp, batchSize)
-			vec.Data = make([]byte, 8*batchSize)
-		default:
-			panic("unsupported vector type")
-		}
+		vec.Alloc(batchSize, proc.Mp)
 		batchData.Vecs[i] = vec
 	}
 	return batchData
 }
 
 func GetBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Process) (*batch.Batch, error) {
-	bat := makeBatch(param, plh)
+	bat := makeBatch(param, plh, proc)
 	var Line []string
 	for rowIdx := 0; rowIdx < plh.batchSize; rowIdx++ {
 		Line = plh.simdCsvLineArray[rowIdx]
@@ -774,7 +715,7 @@ func GetSimdcsvReader(param *ExternalParam) (*ParseLineHandler, error) {
 	plh.simdCsvReader = simdcsv.NewReaderWithOptions(param.reader,
 		rune(param.extern.Tail.Fields.Terminated[0]),
 		'#',
-		false,
+		true,
 		false)
 
 	return plh, nil
