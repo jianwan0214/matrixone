@@ -296,11 +296,7 @@ func CreateAutoIncrCol(db engine.Database, ctx context.Context, proc *process.Pr
 
 // for delete table operation, delete col in mo_increment_columns table
 func DeleteAutoIncrCol(rel engine.Relation, db engine.Database, ctx context.Context, proc *process.Process, tableID string) error {
-	rel2, err := db.Relation(ctx, AUTO_INCR_TABLE)
-	if err != nil {
-		return err
-	}
-
+	var rel2 engine.Relation
 	defs, err := rel.TableDefs(ctx)
 	if err != nil {
 		return err
@@ -311,6 +307,12 @@ func DeleteAutoIncrCol(rel engine.Relation, db engine.Database, ctx context.Cont
 		case *engine.AttributeDef:
 			if !d.Attr.AutoIncrement {
 				continue
+			}
+			if rel2 == nil {
+				rel2, err = db.Relation(ctx, AUTO_INCR_TABLE)
+				if err != nil {
+					return err
+				}
 			}
 			bat := makeAutoIncrBatch(tableID+"_"+d.Attr.Name, 0, 1)
 			if err = rel2.Delete(ctx, bat.GetVector(0), AUTO_INCR_TABLE_COLNAME[0]); err != nil {
