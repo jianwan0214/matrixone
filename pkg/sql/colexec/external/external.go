@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/morpc"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
@@ -92,7 +93,6 @@ func Prepare(proc *process.Process, arg any) error {
 		logutil.Warnf("no such file '%s'", param.extern.Filepath)
 		param.Fileparam.End = true
 	}
-	param.extern.Filepath = ""
 	param.Fileparam.FileCnt = len(param.FileList)
 	param.Ctx = proc.Ctx
 	return nil
@@ -108,7 +108,7 @@ func Call(idx int, proc *process.Process, arg any) (bool, error) {
 		proc.SetInputBatch(nil)
 		return true, nil
 	}
-	if param.extern.Filepath == "" {
+	if param.plh == nil {
 		if param.Fileparam.FileIndex >= len(param.FileList) {
 			proc.SetInputBatch(nil)
 			return true, nil
@@ -352,9 +352,8 @@ func getUnCompressReader(param *tree.ExternParam, r io.ReadCloser) (io.ReadClose
 	}
 }
 
-func makeBatch(param *ExternalParam, plh *ParseLineHandler, mp *mpool.MPool) *batch.Batch {
+func makeBatch(param *ExternalParam, batchSize int, mp *mpool.MPool) *batch.Batch {
 	batchData := batch.New(true, param.Attrs)
-	batchSize := plh.batchSize
 	//alloc space for vector
 	for i := 0; i < len(param.Attrs); i++ {
 		typ := types.New(types.T(param.Cols[i].Typ.Id), param.Cols[i].Typ.Width, param.Cols[i].Typ.Scale, param.Cols[i].Typ.Precision)
@@ -386,7 +385,7 @@ func deleteEnclosed(param *ExternalParam, plh *ParseLineHandler) {
 }
 
 func GetBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Process) (*batch.Batch, error) {
-	bat := makeBatch(param, plh, proc.Mp())
+	bat := makeBatch(param, plh.batchSize, proc.Mp())
 	var (
 		Line []string
 		err  error
@@ -401,10 +400,7 @@ func GetBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 			}
 			plh.simdCsvLineArray[rowIdx] = Line
 		}
-		if len(Line) < len(param.Attrs) {
-			return nil, errColumnCntLarger
-		}
-		err = getData(bat, Line, rowIdx, param, proc.Mp())
+		err = getOneRowData(bat, Line, rowIdx, param, proc.Mp())
 		if err != nil {
 			return nil, err
 		}
@@ -482,7 +478,6 @@ func ScanFileData(param *ExternalParam, proc *process.Process) (*batch.Batch, er
 		plh.simdCsvReader.Close()
 		param.plh = nil
 		param.Fileparam.FileFin++
-		param.extern.Filepath = ""
 		if param.Fileparam.FileFin >= param.Fileparam.FileCnt {
 			param.Fileparam.End = true
 		}
@@ -586,9 +581,26 @@ func judgeInteger(field string) bool {
 	return true
 }
 
-func getData(bat *batch.Batch, Line []string, rowIdx int, param *ExternalParam, mp *mpool.MPool) error {
+func getStrFromLine(Line []string, colIdx int, param *ExternalParam) (string, error) {
+	if i, ok := param.Name2ColIndex[param.Attrs[colIdx]]; ok {
+		if int(i) >= len(Line) {
+			return "", errColumnCntLarger
+		}
+		return Line[i], nil
+	} else {
+		if catalog.ContainExternalHidenCol(param.Attrs[colIdx]) {
+			return param.extern.Filepath, nil
+		}
+	}
+	return "", errColumnCntLarger
+}
+
+func getOneRowData(bat *batch.Batch, Line []string, rowIdx int, param *ExternalParam, mp *mpool.MPool) error {
 	for colIdx := range param.Attrs {
-		field := Line[param.Name2ColIndex[param.Attrs[colIdx]]]
+		field, err := getStrFromLine(Line, colIdx, param)
+		if err != nil {
+			return err
+		}
 		id := types.T(param.Cols[colIdx].Typ.Id)
 		if id != types.T_char && id != types.T_varchar {
 			field = strings.TrimSpace(field)
