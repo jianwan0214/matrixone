@@ -85,8 +85,6 @@ func Prepare(proc *process.Process, arg any) error {
 			return moerr.NewNotSupported(proc.Ctx, "the jsonline format '%s' is not supported now", param.Extern.JsonData)
 		}
 	}
-	param.Extern.FileService = proc.FileService
-	param.Extern.Ctx = proc.Ctx
 	param.IgnoreLineTag = int(param.Extern.Tail.IgnoredLines)
 	param.IgnoreLine = param.IgnoreLineTag
 	if len(param.FileList) == 0 {

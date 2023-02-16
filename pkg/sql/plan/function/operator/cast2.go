@@ -286,6 +286,7 @@ func NewCast(parameters []*vector.Vector, result vector.FunctionResultWrapper, p
 	fromType := parameters[0].GetType()
 	toType := parameters[1].GetType()
 	from := parameters[0]
+
 	switch fromType.Oid {
 	case types.T_any: // scalar null
 		err = scalarNullToOthers(proc.Ctx, toType, result, length)
@@ -941,11 +942,19 @@ func float32ToOthers(ctx context.Context,
 		return floatToInteger(ctx, source, rs, length)
 	case types.T_float32:
 		rs := vector.MustFunctionResult[float32](result)
-		rs.SetFromParameter(source)
-		return nil
+		if rs.GetType().Precision < 0 {
+			rs.SetFromParameter(source)
+			return nil
+		} else {
+			return formatFloat32Rsult(rs, source, length)
+		}
 	case types.T_float64:
 		rs := vector.MustFunctionResult[float64](result)
-		return numericToNumeric(ctx, source, rs, length)
+		if rs.GetType().Precision < 0 {
+			return numericToNumeric(ctx, source, rs, length)
+		} else {
+			return formatFloat32Rsult(rs, source, length)
+		}
 	case types.T_decimal64:
 		rs := vector.MustFunctionResult[types.Decimal64](result)
 		return floatToDecimal64(source, rs, length)
@@ -957,6 +966,30 @@ func float32ToOthers(ctx context.Context,
 		return floatToStr(source, rs, length)
 	}
 	return moerr.NewInternalError(ctx, fmt.Sprintf("unsupported cast from float32 to %s", toType))
+}
+
+func formatFloat32Rsult[T constraints.Float](rs *vector.FunctionResult[T], source vector.FunctionParameterWrapper[float32], length int) error {
+	typ := rs.GetType()
+	var i uint64
+	var dftValue T
+
+	for i = 0; i < uint64(length); i++ {
+		v, isnull := source.GetValue(i)
+		if isnull {
+			if err := rs.Append(dftValue, true); err != nil {
+				return err
+			}
+		} else {
+			value, err := formatFloatNum(T(v), typ)
+			if err != nil {
+				return err
+			}
+			if err := rs.Append(value, false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func float64ToOthers(ctx context.Context,
@@ -992,11 +1025,19 @@ func float64ToOthers(ctx context.Context,
 		return floatToInteger(ctx, source, rs, length)
 	case types.T_float32:
 		rs := vector.MustFunctionResult[float32](result)
-		return numericToNumeric(ctx, source, rs, length)
+		if rs.GetType().Precision < 0 {
+			return numericToNumeric(ctx, source, rs, length)
+		} else {
+			return formatFloat64Rsult(rs, source, length)
+		}
 	case types.T_float64:
 		rs := vector.MustFunctionResult[float64](result)
-		rs.SetFromParameter(source)
-		return nil
+		if rs.GetType().Precision < 0 {
+			rs.SetFromParameter(source)
+			return nil
+		} else {
+			return formatFloat64Rsult(rs, source, length)
+		}
 	case types.T_decimal64:
 		rs := vector.MustFunctionResult[types.Decimal64](result)
 		return floatToDecimal64(source, rs, length)
@@ -1008,6 +1049,30 @@ func float64ToOthers(ctx context.Context,
 		return floatToStr(source, rs, length)
 	}
 	return moerr.NewInternalError(ctx, fmt.Sprintf("unsupported cast from float64 to %s", toType))
+}
+
+func formatFloat64Rsult[T constraints.Float](rs *vector.FunctionResult[T], source vector.FunctionParameterWrapper[float64], length int) error {
+	typ := rs.GetType()
+	var i uint64
+	var dftValue T
+
+	for i = 0; i < uint64(length); i++ {
+		v, isnull := source.GetValue(i)
+		if isnull {
+			if err := rs.Append(dftValue, true); err != nil {
+				return err
+			}
+		} else {
+			value, err := formatFloatNum(T(v), typ)
+			if err != nil {
+				return err
+			}
+			if err := rs.Append(value, false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func dateToOthers(proc *process.Process,
@@ -2732,6 +2797,29 @@ func strToUnsigned[T constraints.Unsigned](
 	return nil
 }
 
+func formatFloatNum[T constraints.Float](num T, Typ types.Type) (T, error) {
+	if Typ.Precision == -1 || Typ.Width == 0 {
+		return num, nil
+	}
+	pow := math.Pow10(int(Typ.Precision))
+	t := math.Abs(float64(num))
+	edge := math.Pow10(int(Typ.Width-Typ.Precision)) - math.Pow10(-int(Typ.Precision))
+	if t >= edge {
+		return 0, moerr.NewOutOfRangeNoCtx("float", "value: %v", num)
+	} else {
+		t *= pow
+		t = math.Round(t)
+		t /= pow
+	}
+	if num < 0 {
+		t = -1 * t
+	}
+	if math.Abs(t) > edge {
+		return 0, moerr.NewOutOfRangeNoCtx("float", "value: %v", num)
+	}
+	return T(t), nil
+}
+
 func strToFloat[T constraints.Float](
 	ctx context.Context,
 	from vector.FunctionParameterWrapper[types.Varlena],
@@ -2761,14 +2849,22 @@ func strToFloat[T constraints.Float](
 					}
 					return moerr.NewInvalidArg(ctx, "cast to float", s)
 				}
-				result = T(r1)
+				value, err := formatFloatNum(float64(r1), to.GetType())
+				if err != nil {
+					return moerr.NewOutOfRangeNoCtx(fmt.Sprintf("float(%v,%v)", to.GetType().Width, to.GetType().Precision), "value: %v", s)
+				}
+				result = T(value)
 			} else {
 				s := convertByteSliceToString(v)
 				r2, tErr = strconv.ParseFloat(s, bitSize)
 				if tErr != nil {
 					return tErr
 				}
-				result = T(r2)
+				value, err := formatFloatNum(r2, to.GetType())
+				if err != nil {
+					return moerr.NewOutOfRangeNoCtx(fmt.Sprintf("float(%v,%v)", to.GetType().Width, to.GetType().Precision), "value: %v", s)
+				}
+				result = T(value)
 			}
 
 			if err := to.Append(result, false); err != nil {
