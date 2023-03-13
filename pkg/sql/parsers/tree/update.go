@@ -131,7 +131,8 @@ const (
 )
 
 const (
-	S3 = 1
+	S3            = 1
+	FILE_PARALLEL = 2
 )
 
 type ExternParam struct {

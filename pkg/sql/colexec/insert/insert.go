@@ -16,6 +16,7 @@ package insert
 
 import (
 	"bytes"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -55,7 +56,9 @@ func Call(idx int, proc *process.Process, arg any, _ bool, _ bool) (bool, error)
 		return false, nil
 	}
 
+	fmt.Println("wangjian sql5 is", bat.Length(), proc.Ti)
 	defer func() {
+		fmt.Println("wangjian sql5b is", bat.Length(), proc.Ti)
 		bat.Clean(proc.Mp())
 	}()
 

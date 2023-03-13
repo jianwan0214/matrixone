@@ -16,6 +16,7 @@ package merge
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -38,7 +39,6 @@ func Prepare(proc *process.Process, arg any) error {
 			Chan: reflect.ValueOf(mr.Ch),
 		}
 	}
-
 	ap.ctr.aliveMergeReceiver = len(proc.Reg.MergeReceivers)
 	return nil
 }
@@ -57,6 +57,7 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (b
 		}
 
 		start := time.Now()
+		fmt.Println("wangjian sql2a is", proc.Ti, proc.Index)
 		chosen, value, ok := reflect.Select(ctr.receiverListener)
 		if !ok {
 			return false, moerr.NewInternalError(proc.Ctx, "pipeline closed unexpectedly")
@@ -65,6 +66,11 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (b
 
 		pointer := value.UnsafePointer()
 		bat := (*batch.Batch)(pointer)
+		if bat != nil {
+			fmt.Println("wangjian sql2b is", proc.Ti, proc.Index, bat.Length(),)
+		} else {
+			fmt.Println("wangjian sql2b is", proc.Ti, proc.Index, 0)
+		}
 		if bat == nil {
 			ctr.receiverListener = append(ctr.receiverListener[:chosen], ctr.receiverListener[chosen+1:]...)
 			ctr.aliveMergeReceiver--

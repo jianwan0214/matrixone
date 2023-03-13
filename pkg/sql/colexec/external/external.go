@@ -154,6 +154,7 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (b
 		param.Fileparam.End = true
 		return false, err
 	}
+	fmt.Println("wangjian sqlA is", bat.Length())
 	proc.SetInputBatch(bat)
 	if bat != nil {
 		anal.Output(bat, isLast)

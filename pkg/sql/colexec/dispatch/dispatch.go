@@ -16,6 +16,7 @@ package dispatch
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/sql/colexec"
@@ -30,6 +31,7 @@ func Prepare(proc *process.Process, arg any) error {
 	ap := arg.(*Argument)
 	ap.ctr = new(container)
 
+	fmt.Println("wangjian sql4 is", ap.FuncId, proc.Ti)
 	switch ap.FuncId {
 	case SendToAllFunc:
 		if len(ap.RemoteRegs) == 0 {

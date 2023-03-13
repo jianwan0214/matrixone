@@ -169,6 +169,10 @@ type Process struct {
 	LoadLocalReader *io.PipeReader
 
 	DispatchNotifyCh chan WrapCs
+
+	Ti []time.Time
+
+	Index int
 }
 
 type WrapCs struct {

@@ -16,6 +16,8 @@ package vm
 
 import (
 	"bytes"
+	"fmt"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
@@ -57,6 +59,10 @@ func Run(ins Instructions, proc *process.Process) (end bool, err error) {
 			err = moerr.ConvertPanicError(proc.Ctx, e)
 		}
 	}()
+	Ti := time.Now()
+	for _, in := range ins {
+		fmt.Println("wangjian sql6 is", in.Op, proc.Ti[0], Ti)
+	}
 	for _, in := range ins {
 		if ok, err = execFunc[in.Op](in.Idx, proc, in.Arg, in.IsFirst, in.IsLast); err != nil {
 			return ok || end, err

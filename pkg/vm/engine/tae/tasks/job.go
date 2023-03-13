@@ -19,8 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/matrixorigin/matrixone/pkg/logutil"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/common"
 	"github.com/panjf2000/ants/v2"
 )
 
@@ -96,9 +94,9 @@ func (job *Job) Run() {
 	job.startTs = time.Now()
 	defer func() {
 		job.endTs = time.Now()
-		logutil.Info("run-job", common.AnyField("id", job.id),
-			common.ErrorField(job.result.Err),
-			common.DurationField(job.endTs.Sub(job.startTs)))
+		//logutil.Info("run-job", common.AnyField("id", job.id),
+			//common.ErrorField(job.result.Err),
+			//common.DurationField(job.endTs.Sub(job.startTs)))
 	}()
 	result := job.exec(job.ctx)
 	job.result = result

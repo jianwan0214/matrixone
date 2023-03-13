@@ -249,7 +249,7 @@ func (s *stateMachine) handleUpdateCommandsCmd(cmd []byte) sm.Result {
 				Commands: make([]pb.ScheduleCommand, 0),
 			}
 		}
-		plog.Infof("adding schedule command to hakeeper rsm: %s", c.LogString())
+		//plog.Infof("adding schedule command to hakeeper rsm: %s", c.LogString())
 		l.Commands = append(l.Commands, c)
 		s.state.ScheduleCommands[c.UUID] = l
 	}
