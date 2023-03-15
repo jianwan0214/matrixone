@@ -34,6 +34,7 @@ func Prepare(_ *process.Process, arg any) error {
 		ap.Container = colexec.NewWriteS3Container(ap.InsertCtx.TableDef)
 	}
 	return nil
+	
 }
 
 func Call(idx int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
