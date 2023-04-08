@@ -2326,6 +2326,7 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 	canCache := true
 	var loadLocalErrGroup *errgroup.Group
 	var loadLocalWriter *io.PipeWriter
+	var originTableID uint64
 
 	singleStatement := len(cws) == 1
 	for i, cw := range cws {
@@ -2883,7 +2884,12 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				Step 1: Start
 			*/
 
-			if st, ok := cw.GetAst().(*tree.Load); ok {
+			if st, ok := stmt.(*tree.Load); ok {
+				originTableID, err = plan2.GetTableDefAndID(st, ses.GetTxnCompileCtx())
+				if err != nil {
+					goto handleFailed
+				}
+				fmt.Println("wangjian sql3 is", originTableID)
 				if st.Local {
 					loadLocalErrGroup = new(errgroup.Group)
 					loadLocalErrGroup.Go(func() error {
@@ -3016,6 +3022,15 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 			logStatementStatus(requestCtx, ses, stmt, fail, txnErr)
 			return txnErr
 		}
+		if st, ok := stmt.(*tree.Load); ok {
+			var curTableID uint64
+			curTableID, err = plan2.GetTableDefAndID(st, ses.GetTxnCompileCtx())
+			fmt.Println("wangjian sql4 is", originTableID, curTableID, err)
+			if err != nil || originTableID != curTableID {
+				err = moerr.NewTableDefChange(requestCtx)
+				goto handleFailed
+			}
+		}
 		switch stmt.(type) {
 		case *tree.Select:
 			if len(proc.SessionInfo.SeqAddValues) != 0 {
@@ -3048,7 +3063,6 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				logStatementStatus(requestCtx, ses, stmt, fail, retErr)
 				return retErr
 			}
-
 		case *tree.CreateDatabase:
 			insertRecordToMoMysqlCompatbilityMode(requestCtx, ses, stmt)
 			resp := mce.setResponse(i, len(cws), rspLen)

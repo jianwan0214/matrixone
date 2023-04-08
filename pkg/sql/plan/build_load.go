@@ -16,6 +16,7 @@ package plan
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
@@ -44,6 +45,7 @@ func buildLoad(stmt *tree.Load, ctx CompilerContext) (*Plan, error) {
 		return nil, err
 	}
 	tableDef := tblInfo.tableDefs[0]
+	fmt.Println("wangjian sql2 is", tblName, tableDef.TblId)
 	objRef := tblInfo.objRef[0]
 	// if tblInfo.haveConstraint {
 	// 	return nil, moerr.NewNotSupported(ctx.GetContext(), "table '%v' have contraint, can not use load statement", tblName)
@@ -269,4 +271,13 @@ func checkNullMap(stmt *tree.Load, Cols []*ColDef, ctx CompilerContext) error {
 		}
 	}
 	return nil
+}
+
+func GetTableDefAndID(stmt *tree.Load, ctx CompilerContext) (uint64, error) {
+	tblInfo, err := getDmlTableInfo(ctx, tree.TableExprs{stmt.Table}, nil, nil, "insert")
+	if err != nil {
+		return 0, err
+	}
+	tableDef := tblInfo.tableDefs[0]
+	return tableDef.TblId, nil
 }

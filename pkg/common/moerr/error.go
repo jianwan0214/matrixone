@@ -176,6 +176,7 @@ const (
 	ErrAppendableBlockNotFound   uint16 = 20625
 	ErrTAEDebug                  uint16 = 20626
 	ErrDuplicateKey              uint16 = 20626
+	ErrTableDefChange            uint16 = 20627
 
 	// Group 7: lock service
 	// ErrDeadLockDetected lockservice has detected a deadlock and should abort the transaction if it receives this error
@@ -317,6 +318,7 @@ var errorMsgRefer = map[uint16]moErrorMsgItem{
 	ErrAppendableSegmentNotFound: {ER_UNKNOWN_ERROR, []string{MySQLDefaultSqlState}, "appendable segment not found"},
 	ErrAppendableBlockNotFound:   {ER_UNKNOWN_ERROR, []string{MySQLDefaultSqlState}, "appendable block not found"},
 	ErrDuplicateKey:              {ER_DUP_KEYNAME, []string{MySQLDefaultSqlState}, "duplicate key name '%s'"},
+	ErrTableDefChange:            {ER_TABLE_DEF_CHANGED, []string{MySQLDefaultSqlState}, "Table definition has changed, please retry transaction"},
 
 	// Group 7: lock service
 	ErrDeadLockDetected:     {ER_UNKNOWN_ERROR, []string{MySQLDefaultSqlState}, "deadlock detected"},
@@ -910,6 +912,10 @@ func NewPrimaryKeyDuplicated(ctx context.Context, k any) *Error {
 
 func NewDuplicateKey(ctx context.Context, k string) *Error {
 	return newError(ctx, ErrDuplicateKey, k)
+}
+
+func NewTableDefChange(ctx context.Context) *Error {
+	return newError(ctx, ErrTableDefChange)
 }
 
 func NewAppendableSegmentNotFound(ctx context.Context) *Error {

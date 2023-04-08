@@ -1757,6 +1757,7 @@ func (mp *MysqlProtocolImpl) makeColumnDefinition41Payload(column *MysqlColumn, 
 
 	//int<1>              decimals
 	pos = mp.io.WriteUint8(data, pos, column.Decimal())
+	fmt.Println("wangjian sql6 is", column.Table(), column.Schema(), column.Name(), column.Length(), column.Decimal())
 
 	//int<2>              filler [00] [00]
 	pos = mp.io.WriteUint16(data, pos, 0)

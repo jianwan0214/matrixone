@@ -238,6 +238,7 @@ func setTableExprToDmlTableInfo(ctx CompilerContext, tbl tree.TableExpr, tblInfo
 	}
 
 	obj, tableDef := ctx.Resolve(dbName, tblName)
+	fmt.Println("wangjian sql5 is", obj, tableDef, dbName, tblName)
 	if tableDef == nil {
 		return moerr.NewNoSuchTable(ctx.GetContext(), dbName, tblName)
 	}
