@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
@@ -810,6 +811,7 @@ func (c *Compile) constructScopeForExternal(index int, ID2Addr map[int]int) *Sco
 	ds.Proc = process.NewWithAnalyze(c.proc, c.ctx, 0, c.anal.Nodes())
 	c.proc.LoadTag = c.anal.qry.LoadTag
 	ds.Proc.LoadTag = true
+	ds.Proc.LoadTag2 = c.proc.LoadTag2
 	bat := batch.NewWithSize(1)
 	{
 		bat.Vecs[0] = vector.NewConstNull(types.T_int64.ToType(), 1, c.proc.Mp())
@@ -864,6 +866,10 @@ func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope
 		}
 	}
 
+	if c.proc.LoadTag2 {
+		logutil.Infof("wangjian sql2 is", time.Now(), mcpu, c.cnList)
+	}
+
 	if n.ObjRef != nil {
 		param.SysTable = external.IsSysTable(n.ObjRef.SchemaName, n.TableDef.Name)
 	}
@@ -898,6 +904,14 @@ func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope
 		fileList = []string{param.Filepath}
 	}
 
+	/*if c.proc.LoadTag2 {
+		for i := 0; i < 10; i++ {
+			fileList = append(fileList, fileList[0])
+			fileSize = append(fileSize, fileSize[0])
+		}
+		fmt.Println("wangjian sql6 is", fileList)
+	}*/
+
 	var fileOffset [][][2]int64
 	for i := 0; i < len(fileList); i++ {
 		param.Filepath = fileList[i]
@@ -929,6 +943,9 @@ func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope
 		for j := 0; j < len(fileOffset); j++ {
 			offset = append(offset, fileOffset[j][i][0])
 			offset = append(offset, fileOffset[j][i][1])
+		}
+		if param.Parallel && i % 2 == 0 {
+			offset[1] = offset[0]
 		}
 		ss[i].appendInstruction(vm.Instruction{
 			Op:      vm.External,

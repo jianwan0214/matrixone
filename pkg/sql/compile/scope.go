@@ -201,6 +201,9 @@ func (s *Scope) ParallelRun(c *Compile, remote bool) error {
 	mcpu := s.NodeInfo.Mcpu
 	switch {
 	case s.Proc.LoadTag:
+		if c.proc.LoadTag2 {
+			logutil.Infof("wangjian sql3 is", time.Now())
+		}
 		for i := 0; i < len(s.PreScopes); i++ {
 			s.PreScopes[i].Magic = Normal
 		}

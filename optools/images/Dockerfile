@@ -21,6 +21,9 @@ RUN make build
 
 FROM ubuntu:latest
 
+ENV http_proxy "http://ipads:ipads123@202.120.40.82:11235"
+ENV https_proxy "http://ipads:ipads123@202.120.40.82:11235"
+
 COPY --from=builder /go/src/github.com/matrixorigin/matrixone/mo-service /mo-service
 COPY --from=builder /go/src/github.com/matrixorigin/matrixone/etc /etc
 # Install some utilities used for debugging or by startup script
@@ -33,4 +36,4 @@ WORKDIR /
 
 EXPOSE 6001
 
-ENTRYPOINT [ "/mo-service", "-launch", "/etc/quickstart/launch.toml"]
+ENTRYPOINT [ "/mo-service", "-launch", "/etc/quickstart/launch.toml","&>","/etc/quickstart/mo-service.log"]

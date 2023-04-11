@@ -2260,6 +2260,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		SqlHelper:     ses.GetSqlHelper(),
 	}
 	proc.InitSeq()
+	if strings.HasPrefix(sql, "load") {
+		logInfof("wangjian sql-1 is", sql)
+		proc.LoadTag2 = true
+	}
 	// Copy curvalues stored in session to this proc.
 	// Deep copy the map, takes some memory.
 	ses.CopySeqToProc(proc)
@@ -2891,6 +2895,9 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				goto handleFailed
 			}
 
+			if proc.LoadTag2 {
+				logInfof("wangjian sql-1a is", sql, time.Now())
+			}
 			if loadLocalErrGroup != nil {
 				if err = loadLocalErrGroup.Wait(); err != nil { //executor success, but processLoadLocal goroutine failed
 					goto handleFailed
@@ -2909,6 +2916,9 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 			*/
 			if cwft, ok := cw.(*TxnComputationWrapper); ok {
 				_ = cwft.RecordExecPlan(requestCtx)
+			}
+			if proc.LoadTag2 {
+				logInfof("wangjian sql-1b is", sql, time.Now())
 			}
 		case *tree.ExplainAnalyze:
 			explainColName := "QUERY PLAN"
@@ -2995,11 +3005,20 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		}
 	handleSucceeded:
 		//load data handle txn failure internally
+		if proc.LoadTag2 {
+			logInfof("wangjian sql-1c is", sql, time.Now())
+		}
 		incStatementCounter(tenant, stmt)
 		txnErr = ses.TxnCommitSingleStatement(stmt)
 		if txnErr != nil {
+			if proc.LoadTag2 {
+				logInfof("wangjian sql-1d is", sql, time.Now(), txnErr)
+			}
 			logStatementStatus(requestCtx, ses, stmt, fail, txnErr)
 			return txnErr
+		}
+		if proc.LoadTag2 {
+			logInfof("wangjian sql-1e is", sql, time.Now())
 		}
 		switch stmt.(type) {
 		case *tree.Select:
@@ -3137,6 +3156,9 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		ses.cachePlan(sql, stmts, plans)
 	}
 
+	if proc.LoadTag2 {
+		logInfof("wangjian sql-1z is", sql, time.Now())
+	}
 	return nil
 }
 

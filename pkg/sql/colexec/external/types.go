@@ -21,6 +21,7 @@ import (
 	"io"
 	"sync/atomic"
 
+	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/objectio"
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/tree"
 	"github.com/matrixorigin/matrixone/pkg/sql/plan"
@@ -38,6 +39,8 @@ type ExternalParam struct {
 	ExParamConst
 	// Inner parameters
 	ExParam
+
+	Bat *batch.Batch
 }
 
 type ExParamConst struct {

@@ -33,7 +33,7 @@ const (
 	DefaultIndexCacheSize = 128 * common.M
 	DefaultMTCacheSize    = 4 * common.G
 
-	DefaultBlockMaxRows     = uint32(8192)
+	DefaultBlockMaxRows     = uint32(40000)
 	DefaultBlocksPerSegment = uint16(256)
 
 	DefaultScannerInterval              = time.Second * 5

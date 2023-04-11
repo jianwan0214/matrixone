@@ -126,6 +126,7 @@ func Prepare(proc *process.Process, arg any) error {
 
 	param.Filter.exprMono = plan2.CheckExprIsMonotonic(proc.Ctx, param.Filter.FilterExpr)
 	param.Filter.File2Size = make(map[string]int64)
+	proc.Ti = time.Now()
 	return nil
 }
 
@@ -135,7 +136,7 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (b
 	select {
 	case <-proc.Ctx.Done():
 		proc.SetInputBatch(nil)
-		return true, nil
+		return true, nil	
 	default:
 	}
 	t1 := time.Now()
@@ -307,6 +308,7 @@ func ReadFile(param *ExternalParam, proc *process.Process) (io.ReadCloser, error
 			},
 		},
 	}
+	logutil.Infof("wangjian sql5d is", param.FileOffset, proc.TotalCnt, time.Now(), proc.Ti)
 	if param.Extern.Parallel {
 		vec.Entries[0].Offset = int64(param.FileOffset[2*(param.Fileparam.FileIndex-1)])
 		vec.Entries[0].Size = int64(param.FileOffset[2*(param.Fileparam.FileIndex-1)+1] - param.FileOffset[2*(param.Fileparam.FileIndex-1)])
@@ -563,7 +565,9 @@ func GetMOcsvReader(param *ExternalParam, proc *process.Process) (*ParseLineHand
 	return plh, nil
 }
 
+var TotalCnt int
 func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Process) (*batch.Batch, error) {
+	logutil.Infof("wangjian sql5b is", proc.TotalCnt, time.Now(), proc.Ti)
 	var bat *batch.Batch
 	var err error
 	var cnt int
@@ -578,7 +582,23 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	}
 	plh := param.plh
 	finish := false
+	
+	logutil.Infof("wangjian sql5f is", proc.Ti)
+	Pos1:
+	logutil.Infof("wangjian sql5g is", proc.Ti)
 	cnt, finish, err = plh.moCsvReader.ReadLimitSize(ONE_BATCH_MAX_ROW, proc.Ctx, param.maxBatchSize, plh.moCsvLineArray)
+	proc.TotalCnt += cnt
+	TotalCnt += cnt
+	logutil.Infof("wangjian sql5c is", TotalCnt, time.Now(), proc.Ti)
+	if finish {
+		logutil.Infof("wangjian sql5z is", proc.TotalCnt, time.Now(), proc.Ti, param.FileOffset)
+	}
+
+	if proc.TotalCnt < 200000000 && !finish {
+		goto Pos1
+	}
+	//fmt.Println("wangjian sql5e is", TotalCnt, time.Now())
+	proc.Count++
 	if err != nil {
 		return nil, err
 	}
@@ -612,6 +632,18 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 		return nil, err
 	}
 	bat.Cnt = 1
+	if param.Bat == nil {
+		param.Bat = &batch.Batch{}
+		for _, vec := range bat.Vecs {
+			// XXX should we free the old vec here ?
+			tmp, _ := vec.Dup(proc.Mp())
+			param.Bat.Vecs = append(param.Bat.Vecs, tmp)
+		}
+		param.Bat.Zs = make([]int64, param.Bat.Vecs[0].Length())
+		for k := 0; k < bat.Vecs[0].Length(); k++ {
+			param.Bat.Zs[k] = 1
+		}	
+	}
 	return bat, nil
 }
 
@@ -876,7 +908,27 @@ func ScanFileData(ctx context.Context, param *ExternalParam, proc *process.Proce
 	if strings.HasSuffix(param.Fileparam.Filepath, ".tae") || param.Extern.QueryResult {
 		return ScanZonemapFile(ctx, param, proc)
 	} else {
-		return ScanCsvFile(ctx, param, proc)
+		if false {//param.Bat != nil {
+			if proc.TotalCnt > 6997 {
+				return nil, nil
+			}
+			bat := &batch.Batch{}
+			for _, vec := range param.Bat.Vecs {
+				// XXX should we free the old vec here ?
+				tmp, _ := vec.Dup(proc.Mp())
+				bat.Vecs = append(bat.Vecs, tmp)
+			}
+			bat.Zs = make([]int64, bat.Vecs[0].Length())
+			for k := 0; k < bat.Vecs[0].Length(); k++ {
+				bat.Zs[k] = 1
+			}
+			proc.TotalCnt++
+			TotalCnt += param.plh.batchSize
+			logutil.Infof("wangjian sql5e is", TotalCnt, time.Now())
+			return bat, nil
+		} else {
+			return ScanCsvFile(ctx, param, proc)
+		}
 	}
 }
 

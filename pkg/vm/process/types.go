@@ -171,6 +171,8 @@ type Process struct {
 
 	LoadTag bool
 
+	LoadTag2 bool
+
 	LastInsertID *uint64
 
 	LoadLocalReader *io.PipeReader
@@ -178,6 +180,12 @@ type Process struct {
 	DispatchNotifyCh chan WrapCs
 
 	Aicm *defines.AutoIncrCacheManager
+
+	TotalCnt int
+
+	Count int
+
+	Ti time.Time
 }
 
 type sqlHelper interface {
