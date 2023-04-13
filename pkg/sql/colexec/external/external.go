@@ -53,7 +53,7 @@ import (
 	plan2 "github.com/matrixorigin/matrixone/pkg/sql/plan"
 	"github.com/matrixorigin/matrixone/pkg/util/errutil"
 	"github.com/matrixorigin/matrixone/pkg/util/trace"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/dataio/blockio"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/blockio"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/options"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 	"github.com/pierrec/lz4"
@@ -136,7 +136,7 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (b
 	select {
 	case <-proc.Ctx.Done():
 		proc.SetInputBatch(nil)
-		return true, nil	
+		return true, nil
 	default:
 	}
 	t1 := time.Now()
@@ -566,6 +566,7 @@ func GetMOcsvReader(param *ExternalParam, proc *process.Process) (*ParseLineHand
 }
 
 var TotalCnt int
+
 func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Process) (*batch.Batch, error) {
 	logutil.Infof("wangjian sql5b is", proc.TotalCnt, time.Now(), proc.Ti)
 	var bat *batch.Batch
@@ -582,21 +583,16 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	}
 	plh := param.plh
 	finish := false
-	
+
 	logutil.Infof("wangjian sql5f is", proc.Ti)
-	Pos1:
-	logutil.Infof("wangjian sql5g is", proc.Ti)
 	cnt, finish, err = plh.moCsvReader.ReadLimitSize(ONE_BATCH_MAX_ROW, proc.Ctx, param.maxBatchSize, plh.moCsvLineArray)
 	proc.TotalCnt += cnt
 	TotalCnt += cnt
-	logutil.Infof("wangjian sql5c is", TotalCnt, time.Now(), proc.Ti)
+	logutil.Infof("wangjian sql5c is", TotalCnt, proc.Ti)
 	if finish {
-		logutil.Infof("wangjian sql5z is", proc.TotalCnt, time.Now(), proc.Ti, param.FileOffset)
+		logutil.Infof("wangjian sql5z is", TotalCnt, proc.TotalCnt, proc.Ti, param.FileOffset)
 	}
 
-	if proc.TotalCnt < 200000000 && !finish {
-		goto Pos1
-	}
 	//fmt.Println("wangjian sql5e is", TotalCnt, time.Now())
 	proc.Count++
 	if err != nil {
@@ -642,7 +638,7 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 		param.Bat.Zs = make([]int64, param.Bat.Vecs[0].Length())
 		for k := 0; k < bat.Vecs[0].Length(); k++ {
 			param.Bat.Zs[k] = 1
-		}	
+		}
 	}
 	return bat, nil
 }
@@ -659,8 +655,7 @@ func getBatchFromZonemapFile(ctx context.Context, param *ExternalParam, proc *pr
 
 	idxs := make([]uint16, len(param.Attrs))
 	meta := param.Zoneparam.bs[param.Zoneparam.offset].GetMeta()
-	header := meta.GetHeader()
-	colCnt := header.GetColumnCount()
+	colCnt := meta.BlockHeader().ColumnCount()
 	for i := 0; i < len(param.Attrs); i++ {
 		idxs[i] = uint16(param.Name2ColIndex[param.Attrs[i]])
 		if param.Extern.SysTable && idxs[i] >= colCnt {
@@ -668,7 +663,7 @@ func getBatchFromZonemapFile(ctx context.Context, param *ExternalParam, proc *pr
 		}
 	}
 
-	bats, err := objectReader.LoadColumns(ctx, idxs, []uint32{param.Zoneparam.bs[param.Zoneparam.offset].GetExtent().Id()}, proc.GetMPool())
+	tmpBat, err := objectReader.LoadColumns(ctx, idxs, param.Zoneparam.bs[param.Zoneparam.offset].BlockHeader().BlockID(), proc.GetMPool())
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +679,7 @@ func getBatchFromZonemapFile(ctx context.Context, param *ExternalParam, proc *pr
 			}
 		} else if catalog.ContainExternalHidenCol(param.Attrs[i]) {
 			if rows == 0 {
-				vecTmp = bats[0].Vecs[i]
+				vecTmp = tmpBat.Vecs[i]
 				if err != nil {
 					return nil, err
 				}
@@ -701,7 +696,7 @@ func getBatchFromZonemapFile(ctx context.Context, param *ExternalParam, proc *pr
 				}
 			}
 		} else {
-			vecTmp = bats[0].Vecs[i]
+			vecTmp = tmpBat.Vecs[i]
 			if err != nil {
 				return nil, err
 			}
@@ -908,7 +903,7 @@ func ScanFileData(ctx context.Context, param *ExternalParam, proc *process.Proce
 	if strings.HasSuffix(param.Fileparam.Filepath, ".tae") || param.Extern.QueryResult {
 		return ScanZonemapFile(ctx, param, proc)
 	} else {
-		if false {//param.Bat != nil {
+		if false { //param.Bat != nil {
 			if proc.TotalCnt > 6997 {
 				return nil, nil
 			}
