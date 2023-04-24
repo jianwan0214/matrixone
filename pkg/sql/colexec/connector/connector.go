@@ -16,6 +16,8 @@ package connector
 
 import (
 	"bytes"
+	"fmt"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
@@ -38,12 +40,21 @@ func Call(_ int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
 	if bat.Length() == 0 {
 		return false, nil
 	}
+	if proc.LoadTag2 {
+		fmt.Println("wangjian sql2a is", time.Now())
+	}
 	select {
 	case <-reg.Ctx.Done():
 		proc.PutBatch(bat)
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql2b is", time.Now())
+		}
 		return true, nil
 	case reg.Ch <- bat:
 		proc.SetInputBatch(nil)
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql2c is", time.Now())
+		}
 		return false, nil
 	}
 }

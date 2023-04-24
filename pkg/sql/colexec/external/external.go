@@ -126,6 +126,7 @@ func Prepare(proc *process.Process, arg any) error {
 
 	param.Filter.exprMono = plan2.CheckExprIsMonotonic(proc.Ctx, param.Filter.FilterExpr)
 	param.Filter.File2Size = make(map[string]int64)
+	proc.Ti = time.Now()
 	return nil
 }
 
@@ -310,6 +311,7 @@ func ReadFile(param *ExternalParam, proc *process.Process) (io.ReadCloser, error
 	if 2*param.Idx >= len(param.FileOffsetTotal[param.Fileparam.FileIndex-1].Offset) {
 		return nil, nil
 	}
+	logutil.Infof("wangjian sql5d is", param.FileOffset, proc.TotalCnt, time.Now(), proc.Ti)
 	param.FileOffset = param.FileOffsetTotal[param.Fileparam.FileIndex-1].Offset[2*param.Idx : 2*param.Idx+2]
 	if param.Extern.Parallel {
 		vec.Entries[0].Offset = int64(param.FileOffset[0])
@@ -556,6 +558,8 @@ func GetMOcsvReader(param *ExternalParam, proc *process.Process) (*ParseLineHand
 	return plh, nil
 }
 
+
+var TotalCnt int
 func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Process) (*batch.Batch, error) {
 	var bat *batch.Batch
 	var err error
@@ -572,6 +576,16 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	plh := param.plh
 	finish := false
 	cnt, finish, err = plh.moCsvReader.ReadLimitSize(ONE_BATCH_MAX_ROW, proc.Ctx, param.maxBatchSize, plh.moCsvLineArray)
+	proc.TotalCnt += cnt
+	TotalCnt += cnt
+	fmt.Println("wangjian sql5c is", TotalCnt, proc.Ti)
+	if proc.TotalCnt > 1000000 {
+		fmt.Println("wangjian sql5y is", proc.TotalCnt, proc.Ti)
+		return nil, errors.New("wangjian sqlEOF")
+	}
+	if finish {
+		fmt.Println("wangjian sql5z is", TotalCnt, proc.TotalCnt, proc.Ti, param.FileOffset, err)
+	}
 	if err != nil {
 		return nil, err
 	}

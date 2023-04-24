@@ -379,6 +379,7 @@ func (s *Scope) LoadRun(c *Compile) error {
 			NodeInfo: s.NodeInfo,
 		}
 		ss[i].Proc = process.NewWithAnalyze(s.Proc, c.ctx, 0, c.anal.Nodes())
+		ss[i].Proc.LoadTag2 = true
 	}
 	newScope := newParallelScope(s, ss)
 

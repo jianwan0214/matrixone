@@ -2332,6 +2332,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		SqlHelper:     ses.GetSqlHelper(),
 	}
 	proc.InitSeq()
+	if strings.HasPrefix(sql, "load") {
+		fmt.Println("wangjian sql-1 is", sql)
+		proc.LoadTag2 = true
+	}
 	// Copy curvalues stored in session to this proc.
 	// Deep copy the map, takes some memory.
 	ses.CopySeqToProc(proc)
@@ -3058,10 +3062,19 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 	handleSucceeded:
 		//load data handle txn failure internally
 		incStatementCounter(tenant, stmt)
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql-1c is", sql, time.Now())
+		}
 		txnErr = ses.TxnCommitSingleStatement(stmt)
 		if txnErr != nil {
+			if proc.LoadTag2 {
+				fmt.Println("wangjian sql-1d is", sql, time.Now(), txnErr)
+			}
 			logStatementStatus(requestCtx, ses, stmt, fail, txnErr)
 			return txnErr
+		}
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql-1e is", sql, time.Now())
 		}
 		switch stmt.(type) {
 		case *tree.Select:
