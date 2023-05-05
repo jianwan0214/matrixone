@@ -398,15 +398,12 @@ func dupInstruction(sourceIns *vm.Instruction, regMap map[*process.WaitRegister]
 		t := sourceIns.Arg.(*insert.Argument)
 		res.Arg = &insert.Argument{
 			Affected:  t.Affected,
-			Engine:    t.Engine,
 			IsRemote:  t.IsRemote,
 			InsertCtx: t.InsertCtx,
 		}
 	case vm.PreInsert:
 		t := sourceIns.Arg.(*preinsert.Argument)
 		res.Arg = &preinsert.Argument{
-			Ctx:        t.Ctx,
-			Eg:         t.Eg,
 			SchemaName: t.SchemaName,
 			TableDef:   t.TableDef,
 			ParentIdx:  t.ParentIdx,
@@ -419,7 +416,6 @@ func dupInstruction(sourceIns *vm.Instruction, regMap map[*process.WaitRegister]
 			Nbucket:      t.Nbucket,
 			DeleteCtx:    t.DeleteCtx,
 			AffectedRows: t.AffectedRows,
-			Engine:       t.Engine,
 			RemoteDelete: t.RemoteDelete,
 			SegmentMap:   t.SegmentMap,
 		}
@@ -517,7 +513,6 @@ func constructDeletion(n *plan.Node, eg engine.Engine, proc *process.Process) (*
 
 	return &deletion.Argument{
 		DeleteCtx: delCtx,
-		Engine:    eg,
 	}, nil
 }
 
@@ -562,8 +557,6 @@ func constructPreInsert(n *plan.Node, eg engine.Engine, proc *process.Process) (
 	}
 
 	return &preinsert.Argument{
-		Ctx:        proc.Ctx,
-		Eg:         eg,
 		SchemaName: schemaName,
 		TableDef:   insertCtx.TableDef,
 		ParentIdx:  insertCtx.ParentIdx,
@@ -592,7 +585,6 @@ func constructInsert(n *plan.Node, eg engine.Engine, proc *process.Process) (*in
 
 	return &insert.Argument{
 		InsertCtx: newCtx,
-		Engine:    eg,
 	}, nil
 }
 
@@ -692,7 +684,6 @@ func constructUpdate(n *plan.Node, eg engine.Engine, proc *process.Process) (*up
 
 	return &update.Argument{
 		UpdateCtx: updateCtx,
-		Engine:    eg,
 	}, nil
 }
 
@@ -1336,7 +1327,6 @@ func constructHashBuild(in vm.Instruction, proc *process.Process) *hashbuild.Arg
 		return &hashbuild.Argument{
 			Ibucket:     arg.Ibucket,
 			Nbucket:     arg.Nbucket,
-			IsRight:     true,
 			NeedHashMap: true,
 			Typs:        arg.RightTypes,
 			Conditions:  arg.Conditions[1],
@@ -1346,7 +1336,6 @@ func constructHashBuild(in vm.Instruction, proc *process.Process) *hashbuild.Arg
 		return &hashbuild.Argument{
 			Ibucket:     arg.Ibucket,
 			Nbucket:     arg.Nbucket,
-			IsRight:     true,
 			NeedHashMap: true,
 			Typs:        arg.RightTypes,
 			Conditions:  arg.Conditions[1],
@@ -1356,7 +1345,6 @@ func constructHashBuild(in vm.Instruction, proc *process.Process) *hashbuild.Arg
 		return &hashbuild.Argument{
 			Ibucket:     arg.Ibucket,
 			Nbucket:     arg.Nbucket,
-			IsRight:     true,
 			NeedHashMap: true,
 			Typs:        arg.RightTypes,
 			Conditions:  arg.Conditions[1],

@@ -16,7 +16,6 @@ package disttae
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"time"
 
@@ -68,7 +67,6 @@ func New(
 		cli:        cli,
 		idGen:      idGen,
 		catalog:    cache.NewCatalog(),
-		txns:       make(map[string]*Transaction),
 		dnMap:      dnMap,
 		partitions: make(map[[2]uint64]Partitions),
 		packerPool: fileservice.NewPool(
@@ -355,8 +353,8 @@ func (e *Engine) New(ctx context.Context, op client.TxnOperator) error {
 			0,
 		},
 		segId: id,
-		cnBlockDeletesMap: &CnBlockDeletesMap{
-			mp: map[string][]int64{},
+		deletedBlocks: &deletedBlocks{
+			offsets: map[string][]int64{},
 		},
 		cnBlkId_Pos:                     map[string]Pos{},
 		blockId_raw_batch:               make(map[string]*batch.Batch),
@@ -448,7 +446,7 @@ func (e *Engine) Nodes() (engine.Nodes, error) {
 	cluster := clusterservice.GetMOCluster()
 	cluster.GetCNService(clusterservice.NewSelector(), func(c metadata.CNService) bool {
 		nodes = append(nodes, engine.Node{
-			Mcpu: runtime.NumCPU(),
+			Mcpu: 8,//runtime.NumCPU(),
 			Id:   c.ServiceID,
 			Addr: c.PipelineServiceAddress,
 		})
@@ -465,12 +463,12 @@ func (e *Engine) Hints() (h engine.Hints) {
 func (e *Engine) NewBlockReader(ctx context.Context, num int, ts timestamp.Timestamp,
 	expr *plan.Expr, ranges [][]byte, tblDef *plan.TableDef) ([]engine.Reader, error) {
 	rds := make([]engine.Reader, num)
-	blks := make([]catalog.BlockInfo, len(ranges))
+	blks := make([]*catalog.BlockInfo, len(ranges))
 	for i := range ranges {
 		blks[i] = BlockInfoUnmarshal(ranges[i])
 		blks[i].EntryState = false
 	}
-	if len(ranges) < num {
+	if len(ranges) < num || len(ranges) == 1 {
 		for i := range ranges {
 			rds[i] = &blockReader{
 				fs:         e.fs,
@@ -479,7 +477,7 @@ func (e *Engine) NewBlockReader(ctx context.Context, num int, ts timestamp.Times
 				expr:       expr,
 				ts:         ts,
 				ctx:        ctx,
-				blks:       []catalog.BlockInfo{blks[i]},
+				blks:       []*catalog.BlockInfo{blks[i]},
 			}
 		}
 		for j := len(ranges); j < num; j++ {
@@ -487,46 +485,22 @@ func (e *Engine) NewBlockReader(ctx context.Context, num int, ts timestamp.Times
 		}
 		return rds, nil
 	}
-	step := len(ranges) / num
-	if step < 1 {
-		step = 1
-	}
+
+	infos, steps := groupBlocksToObjects(blks, num)
+	blockReaders := newBlockReaders(ctx, e.fs, tblDef, -1, ts, num, expr)
+	distributeBlocksToBlockReaders(blockReaders, num, infos, steps)
 	for i := 0; i < num; i++ {
-		if i == num-1 {
-			rds[i] = &blockReader{
-				fs:         e.fs,
-				tableDef:   tblDef,
-				primaryIdx: -1,
-				expr:       expr,
-				ts:         ts,
-				ctx:        ctx,
-				blks:       blks[i*step:],
-			}
-		} else {
-			rds[i] = &blockReader{
-				fs:         e.fs,
-				tableDef:   tblDef,
-				primaryIdx: -1,
-				expr:       expr,
-				ts:         ts,
-				ctx:        ctx,
-				blks:       blks[i*step : (i+1)*step],
-			}
-		}
+		rds[i] = blockReaders[i]
 	}
 	return rds, nil
 }
 
 func (e *Engine) newTransaction(op client.TxnOperator, txn *Transaction) {
-	e.Lock()
-	defer e.Unlock()
-	e.txns[string(op.Txn().ID)] = txn
+	op.AddWorkspace(txn)
 }
 
 func (e *Engine) getTransaction(op client.TxnOperator) *Transaction {
-	e.RLock()
-	defer e.RUnlock()
-	return e.txns[string(op.Txn().ID)]
+	return op.GetWorkspace().(*Transaction)
 }
 
 func (e *Engine) delTransaction(txn *Transaction) {
@@ -541,7 +515,7 @@ func (e *Engine) delTransaction(txn *Transaction) {
 	txn.databaseMap = nil
 	txn.blockId_dn_delete_metaLoc_batch = nil
 	txn.blockId_raw_batch = nil
-	txn.cnBlockDeletesMap = nil
+	txn.deletedBlocks = nil
 	segmentnames := make([]string, 0, len(txn.cnBlkId_Pos)+1)
 	segmentnames = append(segmentnames, string(txn.segId[:]))
 	for blkId := range txn.cnBlkId_Pos {
@@ -553,9 +527,6 @@ func (e *Engine) delTransaction(txn *Transaction) {
 	}
 	colexec.Srv.DeleteTxnSegmentIds(segmentnames)
 	txn.cnBlkId_Pos = nil
-	e.Lock()
-	defer e.Unlock()
-	delete(e.txns, string(txn.meta.ID))
 }
 
 func (e *Engine) getDNServices() []DNStore {

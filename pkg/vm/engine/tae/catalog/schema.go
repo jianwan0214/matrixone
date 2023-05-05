@@ -22,20 +22,23 @@ import (
 	"sort"
 	"time"
 
+	pkgcatalog "github.com/matrixorigin/matrixone/pkg/catalog"
+	"github.com/matrixorigin/matrixone/pkg/common/moerr"
+	"github.com/matrixorigin/matrixone/pkg/container/types"
+	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/objectio"
 	apipb "github.com/matrixorigin/matrixone/pkg/pb/api"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
-
-	"github.com/matrixorigin/matrixone/pkg/common/moerr"
-	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-
-	pkgcatalog "github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/containers"
 )
 
 func i82bool(v int8) bool {
 	return v == 1
+}
+
+func IsFakePkName(name string) bool {
+	return name == pkgcatalog.FakePrimaryKeyColName
 }
 
 type ColDef struct {
@@ -52,6 +55,7 @@ type ColDef struct {
 	SortKey       bool
 	Comment       string
 	ClusterBy     bool
+	FakePK        bool // TODO: use column.flag instead of column.fakepk
 	Default       []byte
 	OnUpdate      []byte
 }
@@ -63,6 +67,7 @@ func (def *ColDef) Nullable() bool        { return def.NullAbility }
 func (def *ColDef) IsHidden() bool        { return def.Hidden }
 func (def *ColDef) IsPhyAddr() bool       { return def.PhyAddr }
 func (def *ColDef) IsPrimary() bool       { return def.Primary }
+func (def *ColDef) IsRealPrimary() bool   { return def.Primary && !def.FakePK }
 func (def *ColDef) IsAutoIncrement() bool { return def.AutoIncrement }
 func (def *ColDef) IsSortKey() bool       { return def.SortKey }
 func (def *ColDef) IsClusterBy() bool     { return def.ClusterBy }
@@ -162,6 +167,25 @@ func (s *Schema) HasSortKey() bool { return s.SortKey != nil }
 func (s *Schema) GetSingleSortKey() *ColDef        { return s.SortKey.Defs[0] }
 func (s *Schema) GetSingleSortKeyIdx() int         { return s.SortKey.Defs[0].Idx }
 func (s *Schema) GetSingleSortKeyType() types.Type { return s.GetSingleSortKey().Type }
+
+// Can't identify fake pk with column.flag. Column.flag is not ready in 0.8.0.
+// TODO: Use column.flag instead of column.name to idntify fake pk.
+func (s *Schema) getFakePrimaryKey() *ColDef {
+	idx, ok := s.NameIndex[pkgcatalog.FakePrimaryKeyColName]
+	if !ok {
+		logutil.Infof("fake primary key not existed: %v", s.String())
+		panic("fake primary key not existed")
+	}
+	return s.ColDefs[idx]
+}
+
+// GetPrimaryKey gets the primary key, including fake primary key.
+func (s *Schema) GetPrimaryKey() *ColDef {
+	if s.HasPK() {
+		return s.ColDefs[s.SortKey.GetSingleIdx()]
+	}
+	return s.getFakePrimaryKey()
+}
 
 func (s *Schema) ReadFrom(r io.Reader) (n int64, err error) {
 	var sn2 int
@@ -471,6 +495,23 @@ func (s *Schema) AppendPKCol(name string, typ types.Type, idx int) error {
 	return s.AppendColDef(def)
 }
 
+func (s *Schema) AppendFakePKCol() error {
+	typ := types.T_uint64.ToType()
+	typ.Width = 64
+	def := &ColDef{
+		Name:          pkgcatalog.FakePrimaryKeyColName,
+		Type:          typ,
+		SortIdx:       -1,
+		NullAbility:   true,
+		FakePK:        true,
+		Primary:       true,
+		Hidden:        true,
+		AutoIncrement: true,
+		ClusterBy:     false,
+	}
+	return s.AppendColDef(def)
+}
+
 // non-cn doesn't set IsPrimary in attr, so isPrimary is used explicitly here
 func (s *Schema) AppendSortColWithAttribute(attr engine.Attribute, sorIdx int, isPrimary bool) error {
 	def, err := ColDefFromAttribute(attr)
@@ -614,6 +655,12 @@ func (s *Schema) Finalize(withoutPhyAddr bool) (err error) {
 			return moerr.NewInvalidInputNoCtx("schema: duplicate column \"%s\"", def.Name)
 		}
 		names[def.Name] = true
+		// Fake pk
+		if IsFakePkName(def.Name) {
+			def.FakePK = true
+			def.SortKey = false
+			def.SortIdx = -1
+		}
 		if def.IsSortKey() {
 			sortColIdx = append(sortColIdx, idx)
 		}
@@ -779,6 +826,12 @@ func MockSchemaAll(colCnt int, pkIdx int, from ...int) *Schema {
 			schema.ColDefs[len(schema.ColDefs)-1].NullAbility = true
 		}
 	}
+	// if pk not existed, mock fake pk
+	if pkIdx == -1 {
+		schema.AppendFakePKCol()
+		schema.ColDefs[len(schema.ColDefs)-1].NullAbility = true
+	}
+
 	schema.BlockMaxRows = 1000
 	schema.SegmentMaxBlocks = 10
 	schema.Constraint, _ = constraintDef.MarshalBinary()

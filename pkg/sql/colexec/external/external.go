@@ -313,6 +313,7 @@ func ReadFile(param *ExternalParam, proc *process.Process) (io.ReadCloser, error
 	}
 	logutil.Infof("wangjian sql5d is", param.FileOffset, proc.TotalCnt, time.Now(), proc.Ti)
 	param.FileOffset = param.FileOffsetTotal[param.Fileparam.FileIndex-1].Offset[2*param.Idx : 2*param.Idx+2]
+	logutil.Infof("wangjian sql5d2 is", param.FileOffset, proc.TotalCnt, time.Now(), proc.Ti)
 	if param.Extern.Parallel {
 		vec.Entries[0].Offset = int64(param.FileOffset[0])
 		vec.Entries[0].Size = int64(param.FileOffset[1] - param.FileOffset[0])
@@ -459,10 +460,10 @@ func deleteEnclosed(param *ExternalParam, plh *ParseLineHandler) {
 	}
 }
 
-func getRealAttrCnt(attrs []string) int {
+func getRealAttrCnt(attrs []string, cols []*plan.ColDef) int {
 	cnt := 0
 	for i := 0; i < len(attrs); i++ {
-		if catalog.ContainExternalHidenCol(attrs[i]) {
+		if catalog.ContainExternalHidenCol(attrs[i]) || cols[i].Hidden {
 			cnt++
 		}
 	}
@@ -493,11 +494,11 @@ func GetBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 		}
 		if param.ClusterTable != nil && param.ClusterTable.GetIsClusterTable() {
 			//the column account_id of the cluster table do need to be filled here
-			if len(Line)+1 < getRealAttrCnt(param.Attrs) {
+			if len(Line)+1 < getRealAttrCnt(param.Attrs, param.Cols) {
 				return nil, moerr.NewInternalError(proc.Ctx, ColumnCntLargerErrorInfo())
 			}
 		} else {
-			if !param.Extern.SysTable && len(Line) < getRealAttrCnt(param.Attrs) {
+			if !param.Extern.SysTable && len(Line) < getRealAttrCnt(param.Attrs, param.Cols) {
 				return nil, moerr.NewInternalError(proc.Ctx, ColumnCntLargerErrorInfo())
 			}
 		}
@@ -579,10 +580,10 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	proc.TotalCnt += cnt
 	TotalCnt += cnt
 	fmt.Println("wangjian sql5c is", TotalCnt, proc.Ti)
-	if proc.TotalCnt > 1000000 {
+	/*if proc.TotalCnt > 1000000 {
 		fmt.Println("wangjian sql5y is", proc.TotalCnt, proc.Ti)
 		return nil, errors.New("wangjian sqlEOF")
-	}
+	}*/
 	if finish {
 		fmt.Println("wangjian sql5z is", TotalCnt, proc.TotalCnt, proc.Ti, param.FileOffset, err)
 	}
@@ -606,6 +607,7 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 			if cnt >= param.IgnoreLine {
 				plh.moCsvLineArray = plh.moCsvLineArray[param.IgnoreLine:cnt]
 				cnt -= param.IgnoreLine
+				plh.moCsvLineArray = append(plh.moCsvLineArray, make([]string, param.IgnoreLine))
 			} else {
 				plh.moCsvLineArray = nil
 				cnt = 0
@@ -915,10 +917,13 @@ func transJsonObject2Lines(ctx context.Context, str string, attrs []string, cols
 		param.prevStr = str
 		return nil, err
 	}
-	if len(jsonMap) < len(attrs) {
+	if len(jsonMap) < getRealAttrCnt(attrs, cols) {
 		return nil, moerr.NewInternalError(ctx, ColumnCntLargerErrorInfo())
 	}
 	for idx, attr := range attrs {
+		if cols[idx].Hidden {
+			continue
+		}
 		if val, ok := jsonMap[attr]; ok {
 			if val == nil {
 				res = append(res, NULL_FLAG)
@@ -963,7 +968,7 @@ func transJsonArray2Lines(ctx context.Context, str string, attrs []string, cols 
 		param.prevStr = str
 		return nil, err
 	}
-	if len(jsonArray) < len(attrs) {
+	if len(jsonArray) < getRealAttrCnt(attrs, cols) {
 		return nil, moerr.NewInternalError(ctx, ColumnCntLargerErrorInfo())
 	}
 	for idx, val := range jsonArray {
@@ -1041,13 +1046,17 @@ func getOneRowData(bat *batch.Batch, Line []string, rowIdx int, param *ExternalP
 		if param.ClusterTable.GetIsClusterTable() && int(param.ClusterTable.GetColumnIndexOfAccountId()) == colIdx {
 			continue
 		}
+		vec := bat.Vecs[colIdx]
+		if param.Cols[colIdx].Hidden {
+			nulls.Add(vec.GetNulls(), uint64(rowIdx))
+			continue
+		}
 		field := getStrFromLine(Line, colIdx, param)
 		id := types.T(param.Cols[colIdx].Typ.Id)
 		if id != types.T_char && id != types.T_varchar && id != types.T_json &&
 			id != types.T_binary && id != types.T_varbinary && id != types.T_blob && id != types.T_text {
 			field = strings.TrimSpace(field)
 		}
-		vec := bat.Vecs[colIdx]
 		isNullOrEmpty := field == NULL_FLAG
 		if id != types.T_char && id != types.T_varchar &&
 			id != types.T_binary && id != types.T_varbinary && id != types.T_json && id != types.T_blob && id != types.T_text {

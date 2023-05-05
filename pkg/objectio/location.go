@@ -32,11 +32,12 @@ const (
 )
 
 const (
-	FileNumOff    = SegmentIdSize
-	FileNumLen    = 2
-	NameStringOff = FileNumOff + FileNumLen
-	NameStringLen = 42 //uuid[36]+_[1]+filename[5]
-	ObjectNameLen = NameStringOff + NameStringLen
+	FileNumOff         = SegmentIdSize
+	FileNumLen         = 2
+	NameStringOff      = FileNumOff + FileNumLen
+	NameStringLen      = 42 //uuid[36]+_[1]+filename[5]
+	ObjectNameLen      = NameStringOff + NameStringLen
+	ObjectNameShortLen = NameStringOff
 )
 
 /*
@@ -56,6 +57,10 @@ func BuildLocation(name ObjectName, extent Extent, rows uint32, id uint16) Locat
 
 func (l Location) Name() ObjectName {
 	return ObjectName(l[:ObjectNameLen])
+}
+
+func (l Location) ShortName() *ObjectNameShort {
+	return (*ObjectNameShort)(unsafe.Pointer(&l[0]))
 }
 
 func (l Location) Extent() Extent {

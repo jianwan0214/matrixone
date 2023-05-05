@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
-	"runtime"
 	"time"
 
 	"github.com/google/uuid"
@@ -119,26 +118,29 @@ func CnServerMessageHandler(
 func cnMessageHandle(receiver *messageReceiverOnServer) error {
 	switch receiver.messageTyp {
 	case pipeline.PrepareDoneNotifyMessage: // notify the dispatch executor
-		var ch chan process.WrapCs
-		var ok bool
-		opUuid := receiver.messageUuid
-		for {
-			if ch, ok = colexec.Srv.GetNotifyChByUuid(opUuid); !ok {
-				runtime.Gosched()
-			} else {
-				break
-			}
+		opProc, err := receiver.GetProcByUuid(receiver.messageUuid)
+		if err != nil {
+			return err
 		}
 
+		putCtx, putCancel := context.WithTimeout(context.Background(), HandleNotifyTimeout)
+		defer putCancel()
 		doneCh := make(chan struct{})
 		info := process.WrapCs{
 			MsgId:  receiver.messageId,
-			Uid:    opUuid,
+			Uid:    receiver.messageUuid,
 			Cs:     receiver.clientSession,
 			DoneCh: doneCh,
 		}
-		ch <- info
-		<-doneCh
+
+		select {
+		case <-putCtx.Done():
+			return moerr.NewInternalErrorNoCtx("pass notify msg to dispatch operator timeout")
+		case <-opProc.Ctx.Done():
+			logutil.Errorf("dispatch operator context done")
+		case opProc.DispatchNotifyCh <- info:
+			<-doneCh
+		}
 		return nil
 
 	case pipeline.PipelineMessage:
@@ -150,7 +152,7 @@ func cnMessageHandle(receiver *messageReceiverOnServer) error {
 		if err != nil {
 			return err
 		}
-		s = refactorScope(c, c.ctx, s)
+		s = refactorScope(c, s)
 
 		err = s.ParallelRun(c, s.IsRemote)
 		if err != nil {
@@ -249,7 +251,7 @@ func (s *Scope) remoteRun(c *Compile) error {
 	}
 
 	// new sender and do send work.
-	sender, err := newMessageSenderOnClient(c.ctx, s.NodeInfo.Addr)
+	sender, err := newMessageSenderOnClient(c.proc.Ctx, s.NodeInfo.Addr)
 	if err != nil {
 		return err
 	}
@@ -337,7 +339,7 @@ func encodeProcessInfo(proc *process.Process) ([]byte, error) {
 	return procInfo.Marshal()
 }
 
-func refactorScope(c *Compile, _ context.Context, s *Scope) *Scope {
+func refactorScope(c *Compile, s *Scope) *Scope {
 	rs := c.newMergeScope([]*Scope{s})
 	rs.Instructions = append(rs.Instructions, vm.Instruction{
 		Op:  vm.Output,
@@ -502,7 +504,7 @@ func generateScope(proc *process.Process, p *pipeline.Pipeline, ctx *scopeContex
 	}
 
 	s := &Scope{
-		Magic:    int(p.GetPipelineType()),
+		Magic:    magicType(p.GetPipelineType()),
 		IsEnd:    p.IsEnd,
 		IsJoin:   p.IsJoin,
 		IsLoad:   p.IsLoad,
@@ -924,8 +926,8 @@ func convertToPipelineInstruction(opr *vm.Instruction, ctx *scopeContext, ctxId 
 
 // convert pipeline.Instruction to vm.Instruction
 func convertToVmInstruction(opr *pipeline.Instruction, ctx *scopeContext) (vm.Instruction, error) {
-	v := vm.Instruction{Op: int(opr.Op), Idx: int(opr.Idx), IsFirst: opr.IsFirst, IsLast: opr.IsLast}
-	switch opr.Op {
+	v := vm.Instruction{Op: vm.OpType(opr.Op), Idx: int(opr.Idx), IsFirst: opr.IsFirst, IsLast: opr.IsLast}
+	switch v.Op {
 	case vm.Deletion:
 		t := opr.GetDelete()
 		onSetUpdateCols := make([]map[string]int32, 0, len(t.OnSetUpdateCol))
@@ -1537,14 +1539,14 @@ func (ctx *scopeContext) addSubPipeline(id uint64, idx int32, ctxId int32, nodeI
 	ctx.scope.PreScopes = append(ctx.scope.PreScopes, ds)
 	p := &pipeline.Pipeline{}
 	p.PipelineId = ctxId
-	p.PipelineType = Pushdown
+	p.PipelineType = pipeline.Pipeline_PipelineType(Pushdown)
 	ctxId++
 	p.DataSource = &pipeline.Source{
 		PushdownId:   id,
 		PushdownAddr: nodeInfo.Addr,
 	}
 	p.InstructionList = append(p.InstructionList, &pipeline.Instruction{
-		Op: vm.Connector,
+		Op: int32(vm.Connector),
 		Connect: &pipeline.Connector{
 			ConnectorIndex: idx,
 			PipelineId:     ctx.id,

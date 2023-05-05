@@ -150,7 +150,8 @@ func AllocS3Writers(tableDef *plan.TableDef) ([]*S3Writer, error) {
 			} else {
 				// Get Single Col pk index
 				for idx, colDef := range tableDef.Cols {
-					if colDef.Primary {
+					if colDef.Primary &&
+						!colDef.Hidden {
 						writers[i].sortIndex = idx
 						break
 					}
@@ -503,16 +504,19 @@ func sortByKey(proc *process.Process, bat *batch.Batch, sortIndex int, m *mpool.
 	return bat.Shuffle(sels, m)
 }
 
-// func getPrimaryKeyIdx(pk map[string]struct{}, attrs []string) (uint16, bool) {
-// 	for i := range attrs {
-// 		if _, ok := pk[attrs[i]]; ok {
-// 			return uint16(i), true
-// 		}
-// 	}
-// 	return 0, false
-// }
+func getPrimaryKeyIdx(pk map[string]struct{}, attrs []string) (uint16, bool) {
+	for i := range attrs {
+		if _, ok := pk[attrs[i]]; ok {
+			return uint16(i), true
+		}
+	}
+	return 0, false
+}
 
 func (w *S3Writer) WriteBlock(bat *batch.Batch) error {
+	if idx, ok := getPrimaryKeyIdx(w.pk, bat.Attrs); ok {
+		w.writer.SetPrimaryKey(idx)
+	}
 	_, err := w.writer.WriteBatch(bat)
 	if err != nil {
 		return err
