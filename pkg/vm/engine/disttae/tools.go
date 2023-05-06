@@ -30,14 +30,11 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/defines"
-	"github.com/matrixorigin/matrixone/pkg/objectio"
 	"github.com/matrixorigin/matrixone/pkg/pb/api"
 	"github.com/matrixorigin/matrixone/pkg/pb/metadata"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	plantool "github.com/matrixorigin/matrixone/pkg/sql/plan"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
 
 func genCreateDatabaseTuple(sql string, accountId, userId, roleId uint32,
@@ -155,13 +152,14 @@ func genTableAlterTuple(constraint [][]byte, m *mpool.MPool) (*batch.Batch, erro
 	bat := batch.NewWithSize(1)
 	bat.Attrs = append(bat.Attrs, catalog.SystemRelAttr_Constraint)
 	bat.SetZs(1, m)
+	idx := catalog.MO_TABLES_ALTER_TABLE
+	bat.Vecs[idx] = vector.NewVec(catalog.MoTablesTypes[catalog.MO_TABLES_CONSTRAINT_IDX]) // constraint
 	for i := 0; i < len(constraint); i++ {
-		idx := catalog.MO_TABLES_ALTER_TABLE
-		bat.Vecs[idx] = vector.NewVec(catalog.MoTablesTypes[catalog.MO_TABLES_CONSTRAINT_IDX]) // constraint
 		if err := vector.AppendBytes(bat.Vecs[idx], constraint[i], false, m); err != nil {
 			return nil, err
 		}
 	}
+	fmt.Println("wangjian sql2 is", len(constraint), bat)
 	return bat, nil
 }
 
@@ -375,6 +373,11 @@ func genCreateColumnTuple(col column, m *mpool.MPool) (*batch.Batch, error) {
 		idx = catalog.MO_COLUMNS_ATT_IS_CLUSTERBY
 		bat.Vecs[idx] = vector.NewVec(catalog.MoColumnsTypes[idx]) // att_constraint_type
 		if err := vector.AppendFixed(bat.Vecs[idx], col.isClusterBy, false, m); err != nil {
+			return nil, err
+		}
+		idx = catalog.MO_COLUMNS_ATT_SEQNUM_IDX
+		bat.Vecs[idx] = vector.NewVec(catalog.MoColumnsTypes[idx]) // att_seqnum
+		if err := vector.AppendFixed(bat.Vecs[idx], col.seqnum, false, m); err != nil {
 			return nil, err
 		}
 
@@ -894,8 +897,10 @@ func genColumns(accountId uint32, tableName, databaseName string,
 			databaseName: databaseName,
 			num:          num,
 			comment:      attrDef.Attr.Comment,
+			seqnum:       uint16(num - 1),
 		}
 		attrDef.Attr.ID = uint64(num)
+		attrDef.Attr.Seqnum = uint16(num - 1)
 		col.hasDef = 0
 		if attrDef.Attr.Default != nil {
 			defaultExpr, err := types.Encode(attrDef.Attr.Default)
@@ -1070,47 +1075,6 @@ func init() {
 
 func isMetaTable(name string) bool {
 	return metaTableMatchRegexp.MatchString(name)
-}
-
-func inBlockMap(blk catalog.BlockInfo, blockMap map[types.Blockid]bool) bool {
-	_, ok := blockMap[blk.BlockID]
-	return ok
-}
-
-func genModifedBlocks(ctx context.Context, deletes map[types.Blockid][]int, orgs, modfs []catalog.BlockInfo,
-	expr *plan.Expr, tableDef *plan.TableDef, proc *process.Process) (blks []ModifyBlockMeta, err error) {
-
-	blks = make([]ModifyBlockMeta, 0, len(orgs)-len(modfs))
-	lenblks := len(modfs)
-	blockMap := make(map[types.Blockid]bool, lenblks)
-	for i := 0; i < lenblks; i++ {
-		blockMap[modfs[i].BlockID] = true
-	}
-
-	exprMono := plantool.CheckExprIsMonotonic(ctx, expr)
-	columnMap, columns, maxCol := plantool.GetColumnsByExpr(expr, tableDef)
-	var meta objectio.ObjectMeta
-	for i, blk := range orgs {
-		if !inBlockMap(blk, blockMap) {
-			location := blk.MetaLocation()
-			ok := true
-			if exprMono {
-				if !objectio.IsSameObjectLocVsMeta(location, meta) {
-					if meta, err = loadObjectMeta(ctx, location, proc.FileService, proc.Mp()); err != nil {
-						return
-					}
-				}
-				ok = needRead(ctx, expr, meta, blk, tableDef, columnMap, columns, maxCol, proc)
-			}
-			if ok {
-				blks = append(blks, ModifyBlockMeta{
-					meta:    orgs[i],
-					deletes: deletes[orgs[i].BlockID],
-				})
-			}
-		}
-	}
-	return
 }
 
 func genInsertBatch(bat *batch.Batch, m *mpool.MPool) (*api.Batch, error) {
@@ -1351,16 +1315,16 @@ func groupBlocksToObjects(blocks []*catalog.BlockInfo, dop int) ([][]*catalog.Bl
 	return infos, steps
 }
 
-func newBlockReaders(ctx context.Context, fs fileservice.FileService, tblDef *plan.TableDef, primaryIdx int, ts timestamp.Timestamp, num int, expr *plan.Expr) []*blockReader {
+func newBlockReaders(ctx context.Context, fs fileservice.FileService, tblDef *plan.TableDef, primarySeqnum int, ts timestamp.Timestamp, num int, expr *plan.Expr) []*blockReader {
 	rds := make([]*blockReader, num)
 	for i := 0; i < num; i++ {
 		rds[i] = &blockReader{
-			fs:         fs,
-			tableDef:   tblDef,
-			primaryIdx: primaryIdx,
-			expr:       expr,
-			ts:         ts,
-			ctx:        ctx,
+			fs:            fs,
+			tableDef:      tblDef,
+			primarySeqnum: primarySeqnum,
+			expr:          expr,
+			ts:            ts,
+			ctx:           ctx,
 		}
 	}
 	return rds

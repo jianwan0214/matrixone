@@ -103,11 +103,6 @@ func (tbl *txnTable) Rows(ctx context.Context) (rows int64, err error) {
 			if _, ok := deletes[entry.RowID]; ok {
 				continue
 			}
-			if tbl.skipBlocks != nil {
-				if _, ok := tbl.skipBlocks[entry.BlockID]; ok {
-					continue
-				}
-			}
 			rows++
 		}
 		iter.Close()
@@ -154,14 +149,17 @@ func (tbl *txnTable) MaxAndMinValues(ctx context.Context) ([][2]any, []uint8, er
 			}
 			if !init {
 				for idx := range zms {
-					zms[idx] = meta.ObjectColumnMeta(uint16(idx)).ZoneMap()
+					zms[idx] = meta.ObjectColumnMeta(uint16(cols[idx].Seqnum)).ZoneMap()
 					tableTypes[idx] = uint8(cols[idx].Typ.Id)
 				}
 
 				init = true
 			} else {
 				for idx := range zms {
-					zm := meta.ObjectColumnMeta(uint16(idx)).ZoneMap()
+					zm := meta.ObjectColumnMeta(uint16(cols[idx].Seqnum)).ZoneMap()
+					if !zm.IsInited() {
+						continue
+					}
 					index.UpdateZM(&zms[idx], zm.GetMaxBuf())
 					index.UpdateZM(&zms[idx], zm.GetMinBuf())
 				}
@@ -193,7 +191,7 @@ func (tbl *txnTable) LoadDeletesForBlock(blockID string, deleteBlockId map[types
 			if err != nil {
 				return err
 			}
-			rowIdBat, err := s3BlockReader.LoadColumns(tbl.db.txn.proc.Ctx, []uint16{0}, location.ID(), tbl.db.txn.proc.GetMPool())
+			rowIdBat, err := s3BlockReader.LoadColumns(tbl.db.txn.proc.Ctx, []uint16{0}, nil, location.ID(), tbl.db.txn.proc.GetMPool())
 			if err != nil {
 				return err
 			}
@@ -252,7 +250,6 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) (ranges [][]by
 
 	ranges = make([][]byte, 0, 1)
 	ranges = append(ranges, []byte{})
-	tbl.skipBlocks = make(map[types.Blockid]uint8)
 	if len(tbl.blockInfos) == 0 {
 		return
 	}
@@ -262,7 +259,6 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) (ranges [][]by
 	columnMap, columns, maxCol := plan2.GetColumnsByExpr(expr, tbl.getTableDef())
 	for _, i := range tbl.dnList {
 		blocks := tbl.blockInfos[i]
-		blks := make([]catalog.BlockInfo, 0, len(blocks))
 		deletes := make(map[types.Blockid][]int)
 		if len(blocks) > 0 {
 			ts := tbl.db.txn.meta.SnapshotTS
@@ -302,16 +298,14 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) (ranges [][]by
 					}
 				}
 			}
-			for i := range blocks {
-				if _, ok := deletes[blocks[i].BlockID]; !ok {
-					blks = append(blks, blocks[i])
-				}
-			}
 		}
-		var meta objectio.ObjectMeta
-		for _, blk := range blks {
-			tbl.skipBlocks[blk.BlockID] = 0
-			ok := true
+		var (
+			meta  objectio.ObjectMeta
+			mblks []ModifyBlockMeta
+		)
+		hasDeletes := len(deletes) > 0
+		for _, blk := range blocks {
+			need := true
 			if exprMono {
 				location := blk.MetaLocation()
 				if !objectio.IsSameObjectLocVsMeta(location, meta) {
@@ -319,23 +313,22 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) (ranges [][]by
 						return
 					}
 				}
-				ok = needRead(ctx, expr, meta, blk, tbl.getTableDef(), columnMap, columns, maxCol, tbl.db.txn.proc)
+				need = needRead(ctx, expr, meta, blk, tbl.getTableDef(), columnMap, columns, maxCol, tbl.db.txn.proc)
 			}
 
-			if ok {
+			if !need {
+				continue
+			}
+
+			if hasDeletes {
+				if rows, ok := deletes[blk.BlockID]; ok {
+					mblks = append(mblks, ModifyBlockMeta{blk, rows})
+				} else {
+					ranges = append(ranges, blockInfoMarshal(blk))
+				}
+			} else {
 				ranges = append(ranges, blockInfoMarshal(blk))
 			}
-		}
-		var mblks []ModifyBlockMeta
-		if mblks, err = genModifedBlocks(
-			ctx,
-			deletes,
-			tbl.blockInfos[i],
-			blks,
-			expr,
-			tbl.getTableDef(),
-			tbl.db.txn.proc); err != nil {
-			return
 		}
 		tbl.modifiedBlocks[i] = mblks
 	}
@@ -366,6 +359,7 @@ func (tbl *txnTable) getTableDef() *plan.TableDef {
 					OnUpdate:  attr.Attr.OnUpdate,
 					Comment:   attr.Attr.Comment,
 					ClusterBy: attr.Attr.ClusterBy,
+					Seqnum:    uint32(attr.Attr.Seqnum),
 				})
 				i++
 			}
@@ -375,6 +369,7 @@ func (tbl *txnTable) getTableDef() *plan.TableDef {
 			Cols:          cols,
 			Name2ColIndex: name2index,
 		}
+		tbl.tableDef.Version = tbl.version
 	}
 	return tbl.tableDef
 }
@@ -384,6 +379,7 @@ func (tbl *txnTable) TableDefs(ctx context.Context) ([]engine.TableDef, error) {
 	// I don't understand why the logic now is not to get all the tableDef. Don't understand.
 	// copy from tae's logic
 	defs := make([]engine.TableDef, 0, len(tbl.defs))
+	defs = append(defs, &engine.VersionDef{Version: tbl.version})
 	if tbl.comment != "" {
 		commentDef := new(engine.CommentDef)
 		commentDef.Comment = tbl.comment
@@ -636,14 +632,19 @@ func (tbl *txnTable) compaction() error {
 			err = e
 			return false
 		}
-		if tbl.idxs == nil {
-			idxs := make([]uint16, 0, len(tbl.tableDef.Cols)-1)
+		if tbl.seqnums == nil {
+			n := len(tbl.tableDef.Cols) - 1
+			idxs := make([]uint16, 0, n)
+			typs := make([]types.Type, 0, n)
 			for i := 0; i < len(tbl.tableDef.Cols)-1; i++ {
-				idxs = append(idxs, uint16(i))
+				col := tbl.tableDef.Cols[i]
+				idxs = append(idxs, uint16(col.Seqnum))
+				typs = append(typs, vector.ProtoTypeToType(col.Typ))
 			}
-			tbl.idxs = idxs
+			tbl.seqnums = idxs
+			tbl.typs = typs
 		}
-		bat, e := s3BlockReader.LoadColumns(tbl.db.txn.proc.Ctx, tbl.idxs, location.ID(), tbl.db.txn.proc.GetMPool())
+		bat, e := s3BlockReader.LoadColumns(tbl.db.txn.proc.Ctx, tbl.seqnums, tbl.typs, location.ID(), tbl.db.txn.proc.GetMPool())
 		if e != nil {
 			err = e
 			return false
@@ -856,13 +857,13 @@ func (tbl *txnTable) newBlockReader(ctx context.Context, num int, expr *plan.Exp
 	if len(ranges) < num || len(ranges) == 1 {
 		for i := range ranges {
 			rds[i] = &blockReader{
-				fs:         tbl.db.txn.engine.fs,
-				tableDef:   tableDef,
-				primaryIdx: tbl.primaryIdx,
-				expr:       expr,
-				ts:         ts,
-				ctx:        ctx,
-				blks:       []*catalog.BlockInfo{blks[i]},
+				fs:            tbl.db.txn.engine.fs,
+				tableDef:      tableDef,
+				primarySeqnum: tbl.primarySeqnum,
+				expr:          expr,
+				ts:            ts,
+				ctx:           ctx,
+				blks:          []*catalog.BlockInfo{blks[i]},
 			}
 		}
 		for j := len(ranges); j < num; j++ {
@@ -872,7 +873,7 @@ func (tbl *txnTable) newBlockReader(ctx context.Context, num int, expr *plan.Exp
 	}
 
 	infos, steps := groupBlocksToObjects(blks, num)
-	blockReaders := newBlockReaders(ctx, tbl.db.txn.engine.fs, tableDef, tbl.primaryIdx, ts, num, expr)
+	blockReaders := newBlockReaders(ctx, tbl.db.txn.engine.fs, tableDef, tbl.primarySeqnum, ts, num, expr)
 	distributeBlocksToBlockReaders(blockReaders, num, infos, steps)
 	for i := 0; i < num; i++ {
 		rds[i] = blockReaders[i]
@@ -925,14 +926,12 @@ func (tbl *txnTable) newReader(
 	}
 	readers := make([]engine.Reader, readerNumber)
 
-	mp := make(map[string]types.Type)
-	colIdxMp := make(map[string]int)
-	if tbl.tableDef != nil {
-		for i := range tbl.tableDef.Cols {
-			colIdxMp[tbl.tableDef.Cols[i].Name] = i
-		}
+	seqnumMp := make(map[string]int)
+	for _, coldef := range tbl.tableDef.Cols {
+		seqnumMp[coldef.Name] = int(coldef.Seqnum)
 	}
 
+	mp := make(map[string]types.Type)
 	mp[catalog.Row_ID] = types.New(types.T_Rowid, 0, 0)
 	for _, def := range tbl.defs {
 		attr, ok := def.(*engine.AttributeDef)
@@ -965,9 +964,8 @@ func (tbl *txnTable) newReader(
 		typsMap:         mp,
 		inserts:         inserts,
 		deletes:         deletes,
-		skipBlocks:      tbl.skipBlocks,
 		iter:            iter,
-		colIdxMp:        colIdxMp,
+		seqnumMp:        seqnumMp,
 		extendId2s3File: make(map[string]int),
 		s3FileService:   fs,
 		procMPool:       txn.proc.GetMPool(),
@@ -1101,6 +1099,7 @@ func (tbl *txnTable) updateLocalState(
 	switch typ {
 
 	case INSERT:
+		// this batch is from user, rather than logtail, use primaryIdx
 		primaryKeys := tbl.localState.HandleRowsInsert(ctx, protoBatch, tbl.primaryIdx, packer)
 
 		// check primary key
