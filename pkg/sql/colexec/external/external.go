@@ -584,7 +584,7 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 		fmt.Println("wangjian sql5y is", proc.TotalCnt, proc.Ti)
 		return nil, errors.New("wangjian sqlEOF")
 	}*/
-	if finish {
+	if finish || err != nil {
 		fmt.Println("wangjian sql5z is", TotalCnt, proc.TotalCnt, proc.Ti, param.FileOffset, err)
 	}
 	if err != nil {

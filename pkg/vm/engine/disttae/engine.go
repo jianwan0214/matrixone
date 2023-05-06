@@ -36,6 +36,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/util/errutil"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
 
@@ -68,7 +69,7 @@ func New(
 		idGen:      idGen,
 		catalog:    cache.NewCatalog(),
 		dnMap:      dnMap,
-		partitions: make(map[[2]uint64]Partitions),
+		partitions: make(map[[2]uint64]logtailreplay.Partitions),
 		packerPool: fileservice.NewPool(
 			128,
 			func() *types.Packer {
@@ -542,7 +543,7 @@ func (e *Engine) getDNServices() []DNStore {
 
 func (e *Engine) cleanMemoryTable() {
 	e.Lock()
-	e.partitions = make(map[[2]uint64]Partitions)
+	e.partitions = make(map[[2]uint64]logtailreplay.Partitions)
 	e.Unlock()
 }
 

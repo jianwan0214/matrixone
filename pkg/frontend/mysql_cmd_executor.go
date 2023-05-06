@@ -408,7 +408,7 @@ func getDataFromPipeline(obj interface{}, bat *batch.Batch) error {
 	procBatchTime := time.Since(procBatchBegin)
 	tTime := time.Since(begin)
 	ses.sentRows.Add(int64(n))
-	logInfof(ses.GetDebugString(), "rowCount %v \n"+
+	logDebugf(ses.GetDebugString(), "rowCount %v \n"+
 		"time of getDataFromPipeline : %s \n"+
 		"processBatchTime %v \n"+
 		"row2colTime %v \n"+
@@ -2823,7 +2823,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 
 		runner = ret.(ComputationRunner)
 
-		logInfof(ses.GetDebugString(), "time of Exec.Build : %s", time.Since(cmpBegin).String())
+		// only log if build time is longer than 1s
+		if time.Since(cmpBegin) > time.Second {
+			logInfof(ses.GetDebugString(), "time of Exec.Build : %s", time.Since(cmpBegin).String())
+		}
 
 		mrs = ses.GetMysqlResultSet()
 		// cw.Compile might rewrite sql, here we fetch the latest version
@@ -2912,7 +2915,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				}
 			}
 
-			logInfof(ses.GetDebugString(), "time of Exec.Run : %s", time.Since(runBegin).String())
+			// only log if run time is longer than 1s
+			if time.Since(runBegin) > time.Second {
+				logInfof(ses.GetDebugString(), "time of Exec.Run : %s", time.Since(runBegin).String())
+			}
 
 			/*
 				Step 3: Say goodbye
@@ -2987,7 +2993,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				}
 			}
 
-			logInfof(ses.GetDebugString(), "time of Exec.Run : %s", time.Since(runBegin).String())
+			// only log if run time is longer than 1s
+			if time.Since(runBegin) > time.Second {
+				logInfof(ses.GetDebugString(), "time of Exec.Run : %s", time.Since(runBegin).String())
+			}
 
 			rspLen = cw.GetAffectedRows()
 			echoTime := time.Now()
@@ -3047,7 +3056,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				goto handleFailed
 			}
 
-			logInfof(ses.GetDebugString(), "time of Exec.Run : %s", time.Since(runBegin).String())
+			// only log if run time is longer than 1s
+			if time.Since(runBegin) > time.Second {
+				logInfof(ses.GetDebugString(), "time of Exec.Run : %s", time.Since(runBegin).String())
+			}
 
 			if cwft, ok := cw.(*TxnComputationWrapper); ok {
 				queryPlan := cwft.plan
