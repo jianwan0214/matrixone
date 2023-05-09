@@ -3,29 +3,8 @@ package plan
 import (
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
-	"github.com/matrixorigin/matrixone/pkg/sql/parsers/tree"
 	"strings"
 )
-
-func checkAlterTableValid(stmt *tree.AlterTable, ctx CompilerContext) (*TableDef, error) {
-	tableName := string(stmt.Table.ObjectName)
-	databaseName := string(stmt.Table.SchemaName)
-	if databaseName == "" {
-		databaseName = ctx.DefaultDatabase()
-	}
-
-	obj, tableDef := ctx.Resolve(databaseName, tableName)
-	if tableDef == nil {
-		return nil, moerr.NewNoSuchTable(ctx.GetContext(), databaseName, tableName)
-	}
-	if tableDef.ViewSql != nil {
-		return nil, moerr.NewInternalError(ctx.GetContext(), "you should use alter view statemnt for View")
-	}
-	if obj.PubAccountId != -1 {
-		return nil, moerr.NewInternalError(ctx.GetContext(), "cannot alter table in subscription database")
-	}
-	return tableDef, nil
-}
 
 func isDroppableColumn(tblInfo *TableDef, colName string, ctx CompilerContext) error {
 	if len(tblInfo.Cols) == 1 {
@@ -94,18 +73,18 @@ func checkDropColumnWithPartitionKeys(colName string, tblInfo *TableDef, ctx Com
 	return nil
 }
 
-func checkIsDroppableColumn(tableDef *TableDef, colName string, ctx CompilerContext) (isDrapable bool, err error) {
+func checkIsDroppableColumn(tableDef *TableDef, colName string, ctx CompilerContext) error {
 	// Check whether dropped column has existed.
 	col := FindColumn(tableDef.Cols, colName)
 	if col == nil {
 		//err = dbterror.ErrCantDropFieldOrKey.GenWithStackByArgs(colName)
-		return false, moerr.NewInvalidInput(ctx.GetContext(), "Can't DROP '%-.192s'; check that column/key exists", colName)
+		return moerr.NewInvalidInput(ctx.GetContext(), "Can't DROP '%-.192s'; check that column/key exists", colName)
 	}
 
-	if err = isDroppableColumn(tableDef, colName, ctx); err != nil {
-		return false, err
+	if err := isDroppableColumn(tableDef, colName, ctx); err != nil {
+		return err
 	}
-	return true, nil
+	return nil
 }
 
 // FindColumn finds column in cols by name.
