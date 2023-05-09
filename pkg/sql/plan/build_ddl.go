@@ -1676,12 +1676,12 @@ func buildAlterTable(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, error) 
 				if err != nil {
 					return nil, err
 				}
-				//for _, col := range tableDef.Cols {
-				//	if col.Name == constraintName {
-				//		name_not_found = false
-				//		break
-				//	}
-				//}
+				for _, col := range tableDef.Cols {
+					if col.Name == constraintName {
+						name_not_found = false
+						break
+					}
+				}
 			case tree.AlterTableDropIndex:
 				alterTableDrop.Typ = plan.AlterTableDrop_INDEX
 				// check index
