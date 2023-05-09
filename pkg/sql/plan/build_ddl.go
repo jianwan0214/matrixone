@@ -1672,6 +1672,10 @@ func buildAlterTable(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, error) 
 			switch opt.Typ {
 			case tree.AlterTableDropColumn:
 				alterTableDrop.Typ = plan.AlterTableDrop_COLUMN
+				err := checkIsDroppableColumn(tableDef, constraintName, ctx)
+				if err != nil {
+					return nil, err
+				}
 				for _, col := range tableDef.Cols {
 					if col.Name == constraintName {
 						name_not_found = false
