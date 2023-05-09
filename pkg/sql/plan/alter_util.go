@@ -20,40 +20,10 @@ import (
 	"strings"
 )
 
-func isDroppableColumn(tblInfo *TableDef, colName string, ctx CompilerContext) error {
-	if len(tblInfo.Cols) == 1 {
-		return moerr.NewInvalidInput(ctx.GetContext(), "can't drop only column %s in table %s", colName, tblInfo.Name)
-	}
-
-	// We do not support drop column that contain primary key columns now.
-	err := checkDropColumnWithPrimaryKey(colName, tblInfo.Pkey, ctx)
-	if err != nil {
-		return err
-	}
-	// We do not support drop column that contain index columns now.
-	err = checkDropColumnWithIndex(colName, tblInfo.Indexes, ctx)
-	if err != nil {
-		return err
-	}
-	// We do not support drop column that contain foreign key columns now.
-	err = checkDropColumnWithForeignKey(colName, tblInfo.Fkeys, ctx)
-	if err != nil {
-		return err
-	}
-
-	// We do not support drop column for partitioned table now
-	err = checkDropColumnWithPartitionKeys(colName, tblInfo, ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func checkDropColumnWithPrimaryKey(colName string, pkey *plan.PrimaryKeyDef, ctx CompilerContext) error {
 	for _, column := range pkey.Names {
 		if column == colName {
-			return moerr.NewInvalidInput(ctx.GetContext(), "can't drop column %s with Primary Key covered now", colName)
+			return moerr.NewInvalidInput(ctx.GetContext(), "can't drop column %s with primary key covered now", colName)
 		}
 	}
 	return nil
@@ -95,7 +65,29 @@ func checkIsDroppableColumn(tableDef *TableDef, colName string, ctx CompilerCont
 		return moerr.NewInvalidInput(ctx.GetContext(), "Can't DROP '%-.192s'; check that column/key exists", colName)
 	}
 
-	if err := isDroppableColumn(tableDef, colName, ctx); err != nil {
+	if len(tableDef.Cols) == 1 {
+		return moerr.NewInvalidInput(ctx.GetContext(), "can't drop only column %s in table %s", colName, tableDef.Name)
+	}
+
+	// We do not support drop column that contain primary key columns now.
+	err := checkDropColumnWithPrimaryKey(colName, tableDef.Pkey, ctx)
+	if err != nil {
+		return err
+	}
+	// We do not support drop column that contain index columns now.
+	err = checkDropColumnWithIndex(colName, tableDef.Indexes, ctx)
+	if err != nil {
+		return err
+	}
+	// We do not support drop column that contain foreign key columns now.
+	err = checkDropColumnWithForeignKey(colName, tableDef.Fkeys, ctx)
+	if err != nil {
+		return err
+	}
+
+	// We do not support drop column for partitioned table now
+	err = checkDropColumnWithPartitionKeys(colName, tableDef, ctx)
+	if err != nil {
 		return err
 	}
 	return nil
