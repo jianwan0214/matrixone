@@ -16,6 +16,7 @@ package insert
 
 import (
 	"bytes"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -49,7 +50,13 @@ func Prepare(_ *process.Process, arg any) error {
 }
 
 func Call(idx int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
-	defer analyze(proc, idx)()
+	Ti := time.Now()
+	defer func() {
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sqlA2 is", time.Since(Ti))
+		}
+		analyze(proc, idx)()
+	}()
 	ap := arg.(*Argument)
 	if ap.ctr.state == End {
 		proc.SetInputBatch(nil)

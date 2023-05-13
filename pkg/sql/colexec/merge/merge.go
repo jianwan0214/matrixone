@@ -16,6 +16,7 @@ package merge
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
@@ -38,6 +39,9 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (b
 	ap := arg.(*Argument)
 	ctr := ap.ctr
 
+	if proc.LoadTag2 {
+		fmt.Println("wangjian sql9 is")
+	}
 	bat, end, _ := ctr.ReceiveFromAllRegs(anal)
 	if end {
 		proc.SetInputBatch(nil)

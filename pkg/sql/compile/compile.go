@@ -882,6 +882,7 @@ func (c *Compile) constructScopeForExternal(addr string, parallel bool) *Scope {
 	ds.Proc = process.NewWithAnalyze(c.proc, c.ctx, 0, c.anal.Nodes())
 	c.proc.LoadTag = c.anal.qry.LoadTag
 	ds.Proc.LoadTag = true
+	ds.Proc.LoadTag2 = true
 	bat := batch.NewWithSize(1)
 	{
 		bat.Vecs[0] = vector.NewConstNull(types.T_int64.ToType(), 1, c.proc.Mp())
@@ -905,6 +906,7 @@ func (c *Compile) constructLoadMergeScope() *Scope {
 }
 
 func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope, error) {
+	external.TotalCnt = 0
 	ctx, span := trace.Start(ctx, "compileExternScan")
 	defer span.End()
 	ID2Addr := make(map[int]int, 0)
@@ -912,6 +914,7 @@ func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope
 	for i := 0; i < len(c.cnList); i++ {
 		tmp := mcpu
 		mcpu += c.cnList[i].Mcpu
+		fmt.Println("wangjian sql6a is", c.cnList[i].Mcpu)
 		ID2Addr[i] = mcpu - tmp
 	}
 	param := &tree.ExternParam{}
@@ -2333,6 +2336,7 @@ func isLaunchMode(cnlist engine.Nodes) bool {
 
 func isSameCN(addr string, currentCNAddr string) bool {
 	// just a defensive judgment. In fact, we shouldn't have received such data.
+	return addr == currentCNAddr
 	parts1 := strings.Split(addr, ":")
 	if len(parts1) != 2 {
 		logutil.Warnf("compileScope received a malformed cn address '%s', expected 'ip:port'", addr)

@@ -16,7 +16,9 @@ package compile
 
 import (
 	"context"
+	"fmt"
 	"hash/crc32"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae"
 
@@ -388,6 +390,8 @@ func (s *Scope) LoadRun(c *Compile) error {
 			NodeInfo: s.NodeInfo,
 		}
 		ss[i].Proc = process.NewWithAnalyze(s.Proc, c.ctx, 0, c.anal.Nodes())
+		fmt.Println("wangjian sql8 is", time.Now())
+		ss[i].Proc.LoadTag2 = true
 	}
 	newScope := newParallelScope(s, ss)
 

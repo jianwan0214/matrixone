@@ -175,6 +175,12 @@ type Process struct {
 
 	LoadTag bool
 
+	LoadTag2 bool
+
+	Ti time.Time
+
+	TotalCnt int
+
 	LastInsertID *uint64
 
 	LoadLocalReader *io.PipeReader

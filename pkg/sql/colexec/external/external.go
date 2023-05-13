@@ -126,6 +126,7 @@ func Prepare(proc *process.Process, arg any) error {
 
 	param.Filter.exprMono = plan2.CheckExprIsMonotonic(proc.Ctx, param.Filter.FilterExpr)
 	param.Filter.File2Size = make(map[string]int64)
+	proc.Ti = time.Now()
 	return nil
 }
 
@@ -310,7 +311,9 @@ func ReadFile(param *ExternalParam, proc *process.Process) (io.ReadCloser, error
 	if 2*param.Idx >= len(param.FileOffsetTotal[param.Fileparam.FileIndex-1].Offset) {
 		return nil, nil
 	}
+	fmt.Println("wangjian sql5d is", param.FileOffset, proc.TotalCnt, time.Now(), proc.Ti)
 	param.FileOffset = param.FileOffsetTotal[param.Fileparam.FileIndex-1].Offset[2*param.Idx : 2*param.Idx+2]
+	fmt.Println("wangjian sql5d2 is", param.FileOffset, proc.TotalCnt, time.Now(), proc.Ti)
 	if param.Extern.Parallel {
 		vec.Entries[0].Offset = int64(param.FileOffset[0])
 		vec.Entries[0].Size = int64(param.FileOffset[1] - param.FileOffset[0])
@@ -559,6 +562,7 @@ func GetMOcsvReader(param *ExternalParam, proc *process.Process) (*ParseLineHand
 	return plh, nil
 }
 
+var TotalCnt int
 func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Process) (*batch.Batch, error) {
 	var bat *batch.Batch
 	var err error
@@ -574,7 +578,35 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	}
 	plh := param.plh
 	finish := false
+	Ti := time.Now()
+	if param.bat == nil {
+		param.bat = makeBatch(param, plh.batchSize, proc)
+	} else {
+		bat := makeBatch(param, plh.batchSize, proc)
+		for i := 0; i < len(bat.Vecs); i++ {
+			tmp, _ := param.bat.Vecs[i].Dup(proc.GetMPool())
+			bat.Vecs[i] = tmp
+		}
+		bat.Zs = make([]int64, param.bat.Vecs[0].Length())
+		for k := 0; k < bat.Vecs[0].Length(); k++ {
+			bat.Zs[k] = 1
+		}
+		proc.TotalCnt += 8192
+		TotalCnt += 8192
+		fmt.Println("wangjian sql5c is", TotalCnt, proc.TotalCnt, proc.Ti, time.Since(Ti))
+		if TotalCnt > (1e9 + 1e8) {
+			param.Fileparam.End = true
+			return nil, nil
+		}
+		return bat, nil
+	}
 	cnt, finish, err = plh.moCsvReader.ReadLimitSize(ONE_BATCH_MAX_ROW, proc.Ctx, param.maxBatchSize, plh.moCsvLineArray)
+	proc.TotalCnt += cnt
+	TotalCnt += cnt
+	fmt.Println("wangjian sql5c is", TotalCnt, proc.TotalCnt, proc.Ti, time.Since(Ti))
+	if finish || err != nil {
+		fmt.Println("wangjian sql5z is", TotalCnt, proc.TotalCnt, proc.Ti, param.FileOffset, err, finish)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -607,6 +639,14 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	bat, err = GetBatchData(param, plh, proc)
 	if err != nil {
 		return nil, err
+	}
+	for i := 0; i < len(bat.Vecs); i++ {
+		tmp, _ := bat.Vecs[i].Dup(proc.GetMPool())
+		param.bat.Vecs[i] = tmp
+	}
+	param.bat.Zs = make([]int64, bat.Vecs[0].Length())
+	for k := 0; k < bat.Vecs[0].Length(); k++ {
+		param.bat.Zs[k] = 1
 	}
 	return bat, nil
 }
@@ -1365,6 +1405,7 @@ func ReadCountStringLimitSize(r *csv.Reader, ctx context.Context, cnt int, size 
 	for i := 0; i < cnt; i++ {
 		select {
 		case <-ctx.Done():
+			fmt.Println("wangjian sql7a is")
 			quit = true
 		default:
 		}
@@ -1373,9 +1414,11 @@ func ReadCountStringLimitSize(r *csv.Reader, ctx context.Context, cnt int, size 
 		}
 		record, err := r.Read()
 		if err == io.EOF {
+			fmt.Println("wangjian sql7b is")
 			return i, true, nil
 		}
 		if err != nil {
+			fmt.Println("wangjian sql7c is", err)
 			return i, true, err
 		}
 		records[i] = record

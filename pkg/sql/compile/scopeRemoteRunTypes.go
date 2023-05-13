@@ -100,7 +100,7 @@ func (sender *messageSenderOnClient) send(
 	scopeData, procData []byte, messageType uint64) error {
 	sdLen := len(scopeData)
 	if sdLen <= maxMessageSizeToMoRpc {
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*10000)
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*30000)
 		_ = cancel
 		message := cnclient.AcquireMessage()
 		message.SetID(sender.streamSender.ID())
@@ -115,7 +115,7 @@ func (sender *messageSenderOnClient) send(
 	start := 0
 	cnt := uint64(0)
 	for start < sdLen {
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*10000)
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*30000)
 		_ = cancel
 
 		end := start + maxMessageSizeToMoRpc
@@ -307,7 +307,9 @@ func (receiver *messageReceiverOnServer) sendError(
 	if errInfo != nil {
 		message.SetMoError(receiver.ctx, errInfo)
 	}
-	return receiver.clientSession.Write(receiver.ctx, message)
+	// return receiver.clientSession.Write(receiver.ctx, message)
+	ctx2, _ := context.WithTimeout(context.TODO(), time.Second*10)
+	return receiver.clientSession.Write(ctx2, message)
 }
 
 func (receiver *messageReceiverOnServer) sendBatch(

@@ -19,11 +19,12 @@ COPY . .
 
 RUN make build
 
-FROM ubuntu:latest
+FROM ubuntu:20.04
 
 COPY --from=builder /go/src/github.com/matrixorigin/matrixone/mo-service /mo-service
 COPY --from=builder /go/src/github.com/matrixorigin/matrixone/etc /etc
 # Install some utilities used for debugging or by startup script
+RUN echo "deb http://mirrors.ustc.edu.cn/ubuntu-ports/ jammy main restricted universe multiverse\ndeb http://mirrors.ustc.edu.cn/ubuntu-ports/ jammy-updates main restricted universe multiverse\ndeb http://mirrors.ustc.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse\ndeb http://mirrors.ustc.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse" > /etc/apt/sources.list
 RUN apt-get update && apt-get install -y \
     dnsutils \
     curl \

@@ -2323,6 +2323,7 @@ func (mce *MysqlCmdExecutor) processLoadLocal(ctx context.Context, param *tree.E
 
 // execute query
 func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) (retErr error) {
+
 	beginInstant := time.Now()
 	ses := mce.GetSession()
 	ses.getSqlType(sql)
@@ -2356,6 +2357,10 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		SqlHelper:     ses.GetSqlHelper(),
 	}
 	proc.InitSeq()
+	if strings.HasPrefix(sql, "load") {
+		fmt.Println("wangjian sql-1 is", sql)
+		proc.LoadTag2 = true
+	}
 	// Copy curvalues stored in session to this proc.
 	// Deep copy the map, takes some memory.
 	ses.CopySeqToProc(proc)
@@ -2971,6 +2976,9 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				}
 			}
 
+			if proc.LoadTag2 {
+				fmt.Println("wangjian sql-1c is", sql, time.Now())
+			}
 			if err = runner.Run(0); err != nil {
 				if loadLocalErrGroup != nil { // release resources
 					err2 := proc.LoadLocalReader.Close()
@@ -2983,6 +2991,9 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 					}
 				}
 				goto handleFailed
+			}
+			if proc.LoadTag2 {
+				fmt.Println("wangjian sql-1d is", sql, time.Now())
 			}
 
 			if loadLocalErrGroup != nil {
@@ -3096,10 +3107,19 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 	handleSucceeded:
 		//load data handle txn failure internally
 		incStatementCounter(tenant, stmt)
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql-1e is", sql, time.Now())
+		}
 		txnErr = ses.TxnCommitSingleStatement(stmt)
 		if txnErr != nil {
+			if proc.LoadTag2 {
+				fmt.Println("wangjian sql-1f is", sql, time.Now(), txnErr)
+			}
 			logStatementStatus(requestCtx, ses, stmt, fail, txnErr)
 			return txnErr
+		}
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql-1g is", sql, time.Now())
 		}
 		switch stmt.(type) {
 		case *tree.Select:
@@ -3192,6 +3212,9 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		logStatementStatus(requestCtx, ses, stmt, success, nil)
 		goto handleNext
 	handleFailed:
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql-1h is", sql, time.Now(), err)
+		}
 		incStatementCounter(tenant, stmt)
 		incStatementErrorsCounter(tenant, stmt)
 		/*
