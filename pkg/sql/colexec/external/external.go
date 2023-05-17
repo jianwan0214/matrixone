@@ -56,7 +56,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/blockio"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/options"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
-	"github.com/pierrec/lz4"
+	"github.com/pierrec/lz4/v4"
 )
 
 var (
@@ -608,6 +608,7 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 		fmt.Println("wangjian sql5z is", TotalCnt, proc.TotalCnt, proc.Ti, param.FileOffset, err, finish)
 	}
 	if err != nil {
+		logutil.Errorf("read external file meet error: %s", err.Error())
 		return nil, err
 	}
 
