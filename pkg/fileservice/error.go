@@ -23,7 +23,9 @@ func isRetryableError(err error) bool {
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
-	if err.Error() == "connection reset by peer" {
+	switch err.Error() {
+	case "connection reset by peer",
+		"connection timed out":
 		return true
 	}
 	return false
