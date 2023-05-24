@@ -602,7 +602,7 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	// 	proc.TotalCnt += 8192
 	// 	TotalCnt += 8192
 	// 	fmt.Println("wangjian sql5c is", TotalCnt, proc.TotalCnt, proc.Ti, time.Since(Ti))
-	// 	if TotalCnt > (1e9 + 1e8) {
+	// 	if TotalCnt > 6e8 {//(1e9 + 1e8) {
 	// 		param.Fileparam.End = true
 	// 		return nil, nil
 	// 	}

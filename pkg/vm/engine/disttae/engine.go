@@ -16,6 +16,7 @@ package disttae
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
+	"github.com/matrixorigin/matrixone/pkg/defines"
 	"github.com/matrixorigin/matrixone/pkg/fileservice"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/objectio"
@@ -143,7 +145,7 @@ func (e *Engine) Database(ctx context.Context, name string,
 	}
 	key := &cache.DatabaseItem{
 		Name:      name,
-		AccountId: getAccountId(ctx),
+		AccountId: defines.GetAccountId(ctx),
 		Ts:        txn.meta.SnapshotTS,
 	}
 	if ok := e.catalog.GetDatabase(key); !ok {
@@ -165,7 +167,7 @@ func (e *Engine) Databases(ctx context.Context, op client.TxnOperator) ([]string
 	if txn == nil {
 		return nil, moerr.NewTxnClosed(ctx, op.Txn().ID)
 	}
-	accountId := getAccountId(ctx)
+	accountId := defines.GetAccountId(ctx)
 	txn.databaseMap.Range(func(k, _ any) bool {
 		key := k.(databaseKey)
 		if key.accountId == accountId {
@@ -173,7 +175,7 @@ func (e *Engine) Databases(ctx context.Context, op client.TxnOperator) ([]string
 		}
 		return true
 	})
-	dbs = append(dbs, e.catalog.Databases(getAccountId(ctx), txn.meta.SnapshotTS)...)
+	dbs = append(dbs, e.catalog.Databases(defines.GetAccountId(ctx), txn.meta.SnapshotTS)...)
 	return dbs, nil
 }
 
@@ -182,7 +184,7 @@ func (e *Engine) GetNameById(ctx context.Context, op client.TxnOperator, tableId
 	if txn == nil {
 		return "", "", moerr.NewTxnClosed(ctx, op.Txn().ID)
 	}
-	accountId := getAccountId(ctx)
+	accountId := defines.GetAccountId(ctx)
 	var db engine.Database
 	noRepCtx := errutil.ContextWithNoReport(ctx, true)
 	txn.databaseMap.Range(func(k, _ any) bool {
@@ -230,7 +232,7 @@ func (e *Engine) GetRelationById(ctx context.Context, op client.TxnOperator, tab
 	if txn == nil {
 		return "", "", nil, moerr.NewTxnClosed(ctx, op.Txn().ID)
 	}
-	accountId := getAccountId(ctx)
+	accountId := defines.GetAccountId(ctx)
 	var db engine.Database
 	noRepCtx := errutil.ContextWithNoReport(ctx, true)
 	txn.databaseMap.Range(func(k, _ any) bool {
@@ -289,7 +291,7 @@ func (e *Engine) Delete(ctx context.Context, name string, op client.TxnOperator)
 	} else {
 		key := &cache.DatabaseItem{
 			Name:      name,
-			AccountId: getAccountId(ctx),
+			AccountId: defines.GetAccountId(ctx),
 			Ts:        txn.meta.SnapshotTS,
 		}
 		if ok := e.catalog.GetDatabase(key); !ok {
@@ -394,7 +396,10 @@ func (e *Engine) Commit(ctx context.Context, op client.TxnOperator) error {
 	if err != nil {
 		return err
 	}
+	Ti := time.Now()
+	fmt.Println("wangjian sqlE1 is", Ti)
 	_, err = op.Write(ctx, reqs)
+	fmt.Println("wangjian sqlE1 is", time.Since(Ti), err, reqs)
 	return err
 }
 
