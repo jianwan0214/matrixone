@@ -15,9 +15,12 @@
 package morpc
 
 import (
+	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 func newFuture(releaseFunc func(f *Future)) *Future {
@@ -33,6 +36,7 @@ func newFuture(releaseFunc func(f *Future)) *Future {
 
 // Future is used to obtain response data synchronously.
 type Future struct {
+	Flag bool
 	id   uint64
 	send RPCMessage
 	c    chan Message
@@ -68,15 +72,34 @@ func (f *Future) Get() (Message, error) {
 	// we have to wait until the message is written, otherwise it will result in the message still
 	// waiting in the send queue after the Get returns, causing concurrent reading and writing on the
 	// request.
+	if f.Flag {
+		fmt.Println("wangjian sqlL1 is", time.Now())
+	}
 	if err := f.waitSendCompleted(); err != nil {
+		if f.Flag {
+			fmt.Println("wangjian sqlL2 is", time.Now())
+		}
 		return nil, err
+	}
+	if f.Flag {
+		fmt.Println("wangjian sqlL3 is", time.Now())
 	}
 	select {
 	case <-f.send.Ctx.Done():
+
+		if f.Flag {
+			fmt.Println("wangjian sqlL4 is", time.Now())
+		}
 		return nil, f.send.Ctx.Err()
 	case resp := <-f.c:
+		if f.Flag {
+			fmt.Println("wangjian sqlL5 is", time.Now(), resp)
+		}
 		return resp, nil
 	case err := <-f.errC:
+		if f.Flag {
+			fmt.Println("wangjian sqlL6 is", time.Now())
+		}
 		return nil, err
 	}
 }
@@ -119,12 +142,22 @@ func (f *Future) done(response Message, cb func()) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if f.Flag {
+		debug.PrintStack()
+		fmt.Println("wangjian sqlM1 is", time.Now())
+	}
 	if !f.mu.closed && !f.timeout() {
 		if response.GetID() != f.getSendMessageID() {
 			return
 		}
 		f.mu.cb = cb
+		if f.Flag {
+			fmt.Println("wangjian sqlM2 is", time.Now(), response)
+		}
 		f.c <- response
+		if f.Flag {
+			fmt.Println("wangjian sqlM3 is", time.Now())
+		}
 	} else if cb != nil {
 		cb()
 	}

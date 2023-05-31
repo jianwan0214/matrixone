@@ -23,6 +23,7 @@ import (
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/stopper"
+	"github.com/matrixorigin/matrixone/pkg/defines"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"go.uber.org/zap"
 )
@@ -167,15 +168,28 @@ func (c *client) maybeInitBackends() error {
 }
 
 func (c *client) Send(ctx context.Context, backend string, request Message) (*Future, error) {
+	if ctx == nil {
+		panic("client Send nil context")
+	}
+	id := defines.GetAccountId(ctx)
 	for {
 		b, err := c.getBackend(backend, false)
 		if err != nil {
 			return nil, err
 		}
 
+		if id == 1000 {
+			fmt.Println("wangjian sqlK1 is", time.Now(), request)
+		}
 		f, err := b.Send(ctx, request)
+		if id == 1000 {
+			fmt.Println("wangjian sqlK2 is", time.Now())
+		}
 		if err != nil && err == backendClosed {
 			continue
+		}
+		if id == 1000 {
+			fmt.Println("wangjian sqlK3 is", time.Now())
 		}
 		return f, err
 	}
@@ -197,6 +211,9 @@ func (c *client) NewStream(backend string, lock bool) (Stream, error) {
 }
 
 func (c *client) Ping(ctx context.Context, backend string) error {
+	if ctx == nil {
+		panic("client Ping nil context")
+	}
 	for {
 		b, err := c.getBackend(backend, false)
 		if err != nil {

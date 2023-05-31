@@ -16,6 +16,10 @@ package frontend
 
 import (
 	"context"
+	"fmt"
+	"sync"
+	"time"
+
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	moruntime "github.com/matrixorigin/matrixone/pkg/common/runtime"
 	"github.com/matrixorigin/matrixone/pkg/defines"
@@ -25,7 +29,6 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/util/metric"
 	"github.com/matrixorigin/matrixone/pkg/util/trace"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-	"sync"
 )
 
 type TxnHandler struct {
@@ -44,6 +47,7 @@ type TxnHandler struct {
 	txnCtxCancel context.CancelFunc
 	mu           sync.Mutex
 	entryMu      sync.Mutex
+	Flag bool
 }
 
 func InitTxnHandler(storage engine.Engine, txnClient TxnClient) *TxnHandler {
@@ -122,6 +126,8 @@ func (th *TxnHandler) NewTxnOperator() (context.Context, TxnOperator, error) {
 	if txnCtx == nil {
 		panic("context should not be nil")
 	}
+	opts = append(opts,
+		client.WithTxnCreateBy(fmt.Sprintf("frontend-session-%p", th.ses)))
 	th.txnOperator, err = th.txnClient.New(
 		txnCtx,
 		th.ses.getLastCommitTS(),
@@ -233,7 +239,8 @@ func (th *TxnHandler) CommitTxn() error {
 	storage := th.GetStorage()
 	ctx2, cancel := context.WithTimeout(
 		txnCtx,
-		storage.Hints().CommitOrRollbackTimeout,
+		//storage.Hints().CommitOrRollbackTimeout,
+		time.Hour,
 	)
 	defer cancel()
 	val, e := ses.GetSessionVar("mo_pk_check_by_dn")
@@ -260,6 +267,12 @@ func (th *TxnHandler) CommitTxn() error {
 	}()
 	//Ti := time.Now()
 	//fmt.Println("wangjian sqlD1 is", time.Now(), Ti)
+	if ses.GetTxnHandler().Flag {
+		ctx2 = context.WithValue(ctx2, defines.TenantIDKey{}, uint32(1000))
+		Ti, _ := ctx2.Deadline()
+		fmt.Println("wangjian sqlZ is", Ti, storage.Hints().CommitOrRollbackTimeout)
+	}
+
 	if err = storage.Commit(ctx2, txnOp); err != nil {
 		//fmt.Println("wangjian sqlD2 is", time.Now(), Ti)
 		logErrorf(sessionInfo, "CommitTxn: storage commit failed. txnId:%s error:%v", txnId, err)

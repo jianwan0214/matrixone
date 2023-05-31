@@ -16,12 +16,15 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/morpc"
 	moruntime "github.com/matrixorigin/matrixone/pkg/common/runtime"
+	"github.com/matrixorigin/matrixone/pkg/defines"
 	"github.com/matrixorigin/matrixone/pkg/pb/metadata"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/util/trace"
@@ -103,10 +106,21 @@ func (s *sender) Close() error {
 }
 
 func (s *sender) Send(ctx context.Context, requests []txn.TxnRequest) (*SendResult, error) {
+	Ti := time.Now()
+	id := defines.GetAccountId(ctx)
+	if id == 1000 {
+		fmt.Println("wangjian sqlF2a is", Ti, time.Now())
+	}
 	sr := s.acquireSendResult()
 	if len(requests) == 1 {
+		if id == 1000 {
+			fmt.Println("wangjian sqlF2b is", Ti, time.Now())
+		}
 		sr.reset(requests)
 		resp, err := s.doSend(ctx, requests[0])
+		if id == 1000 {
+			fmt.Println("wangjian sqlF2b2 is", Ti, time.Now(), requests[0])
+		}
 		if err != nil {
 			sr.Release()
 			return nil, err
@@ -114,9 +128,14 @@ func (s *sender) Send(ctx context.Context, requests []txn.TxnRequest) (*SendResu
 		sr.Responses[0] = resp
 		return sr, nil
 	}
-
+	if id == 1000 {
+		fmt.Println("wangjian sqlF2c is", Ti, time.Now())
+	}
 	sr.reset(requests)
 	for idx := range requests {
+		if id == 1000 {
+			fmt.Println("wangjian sqlF2d is", Ti, time.Now())
+		}
 		dn := requests[idx].GetTargetDN()
 		st := sr.getStream(dn.ShardID)
 		if st == nil {
@@ -136,7 +155,13 @@ func (s *sender) Send(ctx context.Context, requests []txn.TxnRequest) (*SendResu
 		}
 	}
 
+	if id == 1000 {
+		fmt.Println("wangjian sqlF2e is", Ti, time.Now())
+	}
 	for idx := range requests {
+		if id == 1000 {
+			fmt.Println("wangjian sqlF2f is", Ti, time.Now())
+		}
 		st := sr.getStream(requests[idx].GetTargetDN().ShardID)
 		c, err := st.Receive()
 		if err != nil {
@@ -150,6 +175,9 @@ func (s *sender) Send(ctx context.Context, requests []txn.TxnRequest) (*SendResu
 		resp := v.(*txn.TxnResponse)
 		sr.setResponse(resp, idx)
 		s.releaseResponse(resp)
+	}
+	if id == 1000 {
+		fmt.Println("wangjian sqlF2g is", Ti, time.Now())
 	}
 	return sr, nil
 }
@@ -166,13 +194,27 @@ func (s *sender) doSend(ctx context.Context, request txn.TxnRequest) (txn.TxnRes
 		}
 	}
 
+	id := defines.GetAccountId(ctx)
+	if id == 1000 {
+		fmt.Println("wangjian sqlJ1 is", time.Now(), request)
+	}
 	f, err := s.client.Send(ctx, dn.Address, &request)
+	if id == 1000 {
+		fmt.Println("wangjian sqlJ2 is", time.Now())
+	}
 	if err != nil {
 		return txn.TxnResponse{}, err
 	}
 	defer f.Close()
 
+	if id == 1000 {
+		f.Flag = true
+		fmt.Println("wangjian sqlJ3 is", time.Now())
+	}
 	v, err := f.Get()
+	if id == 1000 {
+		fmt.Println("wangjian sqlJ4 is", time.Now())
+	}
 	if err != nil {
 		return txn.TxnResponse{}, err
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/stopper"
+	"github.com/matrixorigin/matrixone/pkg/defines"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/util/errutil"
 	"go.uber.org/zap"
@@ -109,6 +110,7 @@ func WithBackendGoettyOptions(options ...goetty.Option) BackendOption {
 }
 
 type remoteBackend struct {
+	Flag bool
 	remote      string
 	logger      *zap.Logger
 	codec       Codec
@@ -251,25 +253,49 @@ func (rb *remoteBackend) adjust() {
 }
 
 func (rb *remoteBackend) Send(ctx context.Context, request Message) (*Future, error) {
+	if ctx == nil {
+		panic("remoteBackend Send nil context")
+	}
 	return rb.send(ctx, request, false)
 }
 
 func (rb *remoteBackend) SendInternal(ctx context.Context, request Message) (*Future, error) {
+	if ctx == nil {
+		panic("remoteBackend SendInternal nil context")
+	}
 	return rb.send(ctx, request, true)
 }
 
 func (rb *remoteBackend) send(ctx context.Context, request Message, internal bool) (*Future, error) {
 	request.SetID(rb.nextID())
 
+	id := defines.GetAccountId(ctx)
 	f := rb.newFuture()
 	f.init(RPCMessage{Ctx: ctx, Message: request, internal: internal})
+	if id == 1000 {
+		f.Flag = true	
+	}
 	rb.addFuture(f)
 
+	Ti := time.Now()
+	if id == 1000 {
+		fmt.Println("wangjian sqlG1 is", Ti, time.Now(), f)
+	}
+	
 	if err := rb.doSend(f); err != nil {
+		if id == 1000 {
+			fmt.Println("wangjian sqlG2 is", Ti, time.Now())
+		}
 		f.Close()
 		return nil, err
 	}
+	if id == 1000 {
+		fmt.Println("wangjian sqlG3 is", Ti, time.Now(), f.send.Message)
+	}
 	rb.active()
+	if id == 1000 {
+		fmt.Println("wangjian sqlG4 is", Ti, time.Now())
+	}
 	return f, nil
 }
 
@@ -296,24 +322,41 @@ func (rb *remoteBackend) doSend(f *Future) error {
 		return err
 	}
 
+	id := defines.GetAccountId(f.send.Ctx)
+	Ti := time.Now()
 	for {
+		if id == 1000 {
+			fmt.Println("wangjian sqlH1 is", Ti, time.Now())
+		}
 		rb.stateMu.RLock()
 		if rb.stateMu.state == stateStopped {
 			rb.stateMu.RUnlock()
 			return backendClosed
 		}
 
+		if id == 1000 {
+			fmt.Println("wangjian sqlH2 is", Ti, time.Now())
+		}
 		// The close method need acquire the write lock, so we cannot block at here.
 		// The write loop may reset the backend's network link and may not be able to
 		// process writeC for a long time, causing the writeC buffer to reach its limit.
 		select {
 		case rb.writeC <- f:
+			if id == 1000 {
+				fmt.Println("wangjian sqlH3 is", Ti, time.Now())
+			}
 			rb.stateMu.RUnlock()
 			return nil
 		case <-f.send.Ctx.Done():
+			if id == 1000 {
+				fmt.Println("wangjian sqlH4 is", Ti, time.Now())
+			}
 			rb.stateMu.RUnlock()
 			return f.send.Ctx.Err()
 		default:
+			if id == 1000 {
+				fmt.Println("wangjian sqlH5 is", Ti, time.Now())
+			}
 			rb.stateMu.RUnlock()
 		}
 	}
@@ -403,20 +446,29 @@ func (rb *remoteBackend) writeLoop(ctx context.Context) {
 	messages := make([]*Future, 0, rb.options.batchSendSize)
 	stopped := false
 	for {
+		Ti := time.Now()
 		messages, stopped = rb.fetch(ctx, messages, rb.options.batchSendSize)
 		if len(messages) > 0 {
 			written := 0
 			writeTimeout := time.Duration(0)
 			for _, f := range messages {
+				if f.Flag {
+					fmt.Println("wangjian sqlQ1 is", time.Now(), Ti)
+				}
 				id := f.getSendMessageID()
 				if stopped {
 					f.messageSended(backendClosed)
 					continue
 				}
-
+				if f.Flag {
+					fmt.Println("wangjian sqlQ2 is", time.Now(), Ti)
+				}
 				if v := rb.doWrite(ctx, id, f); v > 0 {
 					writeTimeout += v
 					written++
+				}
+				if f.Flag {
+					fmt.Println("wangjian sqlQ3 is", time.Now(), Ti)
 				}
 			}
 
@@ -500,12 +552,17 @@ func (rb *remoteBackend) readLoop(ctx context.Context) {
 		}
 	}()
 
+	preTime := time.Now()
+	var msg2 Message
+	var dur time.Duration
+	Ti2 := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			rb.clean()
 			return
 		default:
+			Ti := time.Now()
 			msg, err := rb.conn.Read(goetty.ReadOptions{})
 			if err != nil {
 				rb.logger.Error("read from backend failed",
@@ -515,13 +572,25 @@ func (rb *remoteBackend) readLoop(ctx context.Context) {
 				rb.scheduleResetConn()
 				return
 			}
+			resp := msg.(RPCMessage).Message
+			if f, ok := rb.mu.futures[resp.GetID()]; ok {
+				if f.Flag {
+					fmt.Println("wangjian sqlP2 is", time.Now(), Ti, Ti2, err, resp)
+					fmt.Println("wangjian sqlP3 is", preTime, dur, msg2)
+				}
+			} else {
+				fmt.Println("wangchao sqlP4 is", time.Now(), Ti, Ti2, time.Since(Ti), err)
+			}
+			preTime = Ti
+			dur = time.Since(Ti)
+			msg2 = resp
 
 			rb.active()
 
 			if rb.options.hasPayloadResponse {
 				wg.Add(1)
 			}
-			resp := msg.(RPCMessage).Message
+			
 			rb.requestDone(ctx, resp.GetID(), msg.(RPCMessage), nil, cb)
 			if rb.options.hasPayloadResponse {
 				wg.Wait()
@@ -539,14 +608,21 @@ func (rb *remoteBackend) fetch(
 		messages[i] = nil
 	}
 	messages = messages[:0]
+	Ti := time.Now()
 	select {
 	case f := <-rb.writeC:
+		if f.Flag {
+			fmt.Println("wangjian sqlR1 is", time.Now(), Ti)
+		}
 		messages = append(messages, f)
 		n := maxFetchCount - 1
 	OUTER:
 		for i := 0; i < n; i++ {
 			select {
 			case f := <-rb.writeC:
+				if f.Flag {
+					fmt.Println("wangjian sqlR2 is", time.Now(), Ti)
+				}
 				messages = append(messages, f)
 			default:
 				break OUTER
@@ -558,6 +634,9 @@ func (rb *remoteBackend) fetch(
 		for {
 			select {
 			case f := <-rb.writeC:
+				if f.Flag {
+					fmt.Println("wangjian sqlR3 is", time.Now(), Ti)
+				}
 				messages = append(messages, f)
 			default:
 				return messages, true
@@ -648,6 +727,9 @@ func (rb *remoteBackend) requestDone(ctx context.Context, id uint64, msg RPCMess
 
 	rb.mu.Lock()
 	if f, ok := rb.mu.futures[id]; ok {
+		if f.Flag {
+			fmt.Println("wangjian sqlO1 is", time.Now())
+		}
 		delete(rb.mu.futures, id)
 		rb.mu.Unlock()
 		if err == nil {
@@ -673,7 +755,9 @@ func (rb *remoteBackend) requestDone(ctx context.Context, id uint64, msg RPCMess
 func (rb *remoteBackend) addFuture(f *Future) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-
+	if f.Flag {
+		rb.Flag = true
+	}
 	f.ref()
 	rb.mu.futures[f.getSendMessageID()] = f
 }
@@ -845,12 +929,12 @@ type stream struct {
 	cancel           context.CancelFunc
 
 	// reset fields
-	id uint64
-	mu struct {
-		sync.Mutex
-		closed               bool
-		sequence             uint32
-		lastReceivedSequence uint32
+	id                   uint64
+	sequence             uint32
+	lastReceivedSequence uint32
+	mu                   struct {
+		sync.RWMutex
+		closed bool
 	}
 }
 
@@ -879,8 +963,8 @@ func newStream(
 func (s *stream) init(id uint64, unlockAfterClose bool) {
 	s.id = id
 	s.unlockAfterClose = unlockAfterClose
-	s.mu.sequence = 0
-	s.mu.lastReceivedSequence = 0
+	s.sequence = 0
+	s.lastReceivedSequence = 0
 	s.mu.closed = false
 	for {
 		select {
@@ -915,9 +999,9 @@ func (s *stream) Send(ctx context.Context, request Message) error {
 	f.ref()
 	defer f.Close()
 
-	s.mu.Lock()
+	s.mu.RLock()
 	if s.mu.closed {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return moerr.NewStreamClosedNoCtx()
 	}
 
@@ -927,7 +1011,7 @@ func (s *stream) Send(ctx context.Context, request Message) error {
 	// 2. backend read goroutine:   cancelActiveStream -> backend.Lock
 	// 3. backend read goroutine:   cancelActiveStream -> stream.Lock : deadlock here
 	// 4. current goroutine:        f.Close -> backend.Lock           : deadlock here
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
 	if err != nil {
 		return err
@@ -940,20 +1024,20 @@ func (s *stream) doSendLocked(
 	ctx context.Context,
 	f *Future,
 	request Message) error {
-	s.mu.sequence++
+	s.sequence++
 	f.init(RPCMessage{
 		Ctx:            ctx,
 		Message:        request,
 		stream:         true,
-		streamSequence: s.mu.sequence,
+		streamSequence: s.sequence,
 	})
 
 	return s.sendFunc(f)
 }
 
 func (s *stream) Receive() (chan Message, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.mu.closed {
 		return nil, moerr.NewStreamClosedNoCtx()
 	}
@@ -985,8 +1069,8 @@ func (s *stream) done(
 	ctx context.Context,
 	message RPCMessage,
 	clean bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	if s.mu.closed {
 		return
@@ -1000,11 +1084,11 @@ func (s *stream) done(
 		panic("BUG")
 	}
 	if response != nil &&
-		message.streamSequence != s.mu.lastReceivedSequence+1 {
+		message.streamSequence != s.lastReceivedSequence+1 {
 		response = nil
 	}
 
-	s.mu.lastReceivedSequence = message.streamSequence
+	s.lastReceivedSequence = message.streamSequence
 	select {
 	case s.c <- response:
 	case <-ctx.Done():

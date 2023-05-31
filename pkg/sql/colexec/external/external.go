@@ -215,6 +215,7 @@ func makeFilepathBatch(node *plan.Node, proc *process.Process, filterList []*pla
 		Attrs: make([]string, num),
 		Vecs:  make([]*vector.Vector, num),
 		Zs:    make([]int64, len(fileList)),
+		Cnt:   1,
 	}
 	for i := 0; i < num; i++ {
 		bat.Attrs[i] = node.TableDef.Cols[i].Name
@@ -589,24 +590,24 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	Ti := time.Now()
 	if param.bat == nil {
 		param.bat = makeBatch(param, plh.batchSize, proc)
-	// } else {
-	// 	bat := makeBatch(param, plh.batchSize, proc)
-	// 	for i := 0; i < len(bat.Vecs); i++ {
-	// 		tmp, _ := param.bat.Vecs[i].Dup(proc.GetMPool())
-	// 		bat.Vecs[i] = tmp
-	// 	}
-	// 	bat.Zs = make([]int64, param.bat.Vecs[0].Length())
-	// 	for k := 0; k < bat.Vecs[0].Length(); k++ {
-	// 		bat.Zs[k] = 1
-	// 	}
-	// 	proc.TotalCnt += 8192
-	// 	TotalCnt += 8192
-	// 	fmt.Println("wangjian sql5c is", TotalCnt, proc.TotalCnt, proc.Ti, time.Since(Ti))
-	// 	if TotalCnt > 6e8 {//(1e9 + 1e8) {
-	// 		param.Fileparam.End = true
-	// 		return nil, nil
-	// 	}
-	// 	return bat, nil
+	} else {
+		bat := makeBatch(param, plh.batchSize, proc)
+		for i := 0; i < len(bat.Vecs); i++ {
+			tmp, _ := param.bat.Vecs[i].Dup(proc.GetMPool())
+			bat.Vecs[i] = tmp
+		}
+		bat.Zs = make([]int64, param.bat.Vecs[0].Length())
+		for k := 0; k < bat.Vecs[0].Length(); k++ {
+			bat.Zs[k] = 1
+		}
+		proc.TotalCnt += 8192
+		TotalCnt += 8192
+		fmt.Println("wangjian sql5c is", TotalCnt, proc.TotalCnt, proc.Ti, time.Since(Ti))
+		if TotalCnt > 10e8 {//(1e9 + 1e8) {
+			param.Fileparam.End = true
+			return nil, nil
+		}
+		return bat, nil
 	}
 	cnt, finish, err = plh.moCsvReader.ReadLimitSize(ONE_BATCH_MAX_ROW, proc.Ctx, param.maxBatchSize, plh.moCsvLineArray)
 	proc.TotalCnt += cnt
