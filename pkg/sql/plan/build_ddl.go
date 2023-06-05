@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -1015,6 +1016,8 @@ func buildUniqueIndexTable(createTable *plan.CreateTable, indexInfos []*tree.Uni
 		for _, keyPart := range indexInfo.KeyParts {
 			name := keyPart.ColName.Parts[0]
 			if _, ok := colMap[name]; !ok {
+				fmt.Printf("%s", debug.Stack())
+				//debug.PrintStack()
 				return moerr.NewInvalidInput(ctx.GetContext(), "column '%s' is not exist", name)
 			}
 			if colMap[name].Typ.Id == int32(types.T_blob) {
@@ -1643,6 +1646,7 @@ func buildAlterTable(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, error) 
 	for _, col := range tableDef.Cols {
 		colMap[col.Name] = col
 	}
+	fmt.Println("wangjian sql4 is", colMap)
 	// Check whether the composite primary key column is included
 	if tableDef.Pkey != nil && tableDef.Pkey.CompPkeyCol != nil {
 		colMap[tableDef.Pkey.CompPkeyCol.Name] = tableDef.Pkey.CompPkeyCol
@@ -1655,6 +1659,7 @@ func buildAlterTable(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, error) 
 	uniqueIndexInfos := make([]*tree.UniqueIndex, 0)
 	secondaryIndexInfos := make([]*tree.Index, 0)
 	for i, option := range stmt.Options {
+		fmt.Printf("wangjian sql5 is %T\n", option)
 		switch opt := option.(type) {
 		case *tree.AlterOptionDrop:
 			alterTableDrop := new(plan.AlterTableDrop)
@@ -1746,10 +1751,12 @@ func buildAlterTable(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, error) 
 
 				oriPriKeyName := getTablePriKeyName(tableDef.Pkey)
 				indexInfo := &plan.CreateTable{TableDef: &TableDef{}}
+				fmt.Println("wangjian sql3 is", colMap)
 				if err = buildUniqueIndexTable(indexInfo, []*tree.UniqueIndex{def}, colMap, oriPriKeyName, ctx); err != nil {
 					return nil, err
 				}
 
+				fmt.Println("wangjian sql7 is", databaseName, tableName, oriPriKeyName, indexInfo)
 				alterTable.Actions[i] = &plan.AlterTable_Action{
 					Action: &plan.AlterTable_Action_AddIndex{
 						AddIndex: &plan.AlterTableAddIndex{
@@ -1897,6 +1904,27 @@ func buildAlterTable(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, error) 
 						Name: opt.Column.Name.Parts[0],
 					})
 					indexs = append(indexs, opt.Column.Name.Parts[0])
+					fmt.Println("wangjian sql6 is", indexs)
+					oriPriKeyName := getTablePriKeyName(tableDef.Pkey)
+					indexInfo := &plan.CreateTable{TableDef: &TableDef{}}
+					fmt.Println("wangjian sql3 is", colMap)
+					if err = buildUniqueIndexTable(indexInfo, []*tree.UniqueIndex{def}, colMap, oriPriKeyName, ctx); err != nil {
+						return nil, err
+					}
+
+					fmt.Println("wangjian sql7 is", databaseName, tableName, oriPriKeyName, indexInfo)
+					alterTable.Actions[i] = &plan.AlterTable_Action{
+						Action: &plan.AlterTable_Action_AddIndex{
+							AddIndex: &plan.AlterTableAddIndex{
+								DbName:                databaseName,
+								TableName:             tableName,
+								OriginTablePrimaryKey: oriPriKeyName,
+								IndexInfo:             indexInfo,
+								IndexTableExist:       true,
+							},
+						},
+					}
+
 				}
 			}
 			if len(pks) > 0 {

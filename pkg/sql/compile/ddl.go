@@ -438,6 +438,7 @@ func (s *Scope) AlterTable(c *Compile) error {
 			dropColIdx++
 		default:
 		}
+		fmt.Println("wangjian sql2 is", req)
 		tmp, err := req.Marshal()
 		if err != nil {
 			return err
