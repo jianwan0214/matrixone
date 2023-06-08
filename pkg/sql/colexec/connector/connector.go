@@ -48,19 +48,22 @@ func Call(_ int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
 	select {
 	case <-proc.Ctx.Done():
 		proc.PutBatch(bat)
-		logutil.Infof("proc context done during connector send")
+		logutil.Warn("proc context done during connector send")
 		if proc.LoadTag2 {
 			fmt.Println("wangjian sql2b is", time.Now())
 		}
 		return true, nil
 	case <-reg.Ctx.Done():
 		proc.PutBatch(bat)
-		logutil.Infof("reg.Ctx done during connector send")
+		logutil.Warn("reg.Ctx done during connector send")
+		if proc.LoadTag2 {
+			fmt.Println("wangjian sql2c is", time.Now())
+		}
 		return true, nil
 	case reg.Ch <- bat:
 		proc.SetInputBatch(nil)
 		if proc.LoadTag2 {
-			fmt.Println("wangjian sql2c is", time.Now())
+			fmt.Println("wangjian sql2d is", time.Now())
 		}
 		return false, nil
 	}

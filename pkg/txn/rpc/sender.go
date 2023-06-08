@@ -105,11 +105,13 @@ func (s *sender) Close() error {
 	return s.client.Close()
 }
 
+var SendCnt int
 func (s *sender) Send(ctx context.Context, requests []txn.TxnRequest) (*SendResult, error) {
+	SendCnt++
 	Ti := time.Now()
 	id := defines.GetAccountId(ctx)
 	if id == 1000 {
-		fmt.Println("wangjian sqlF2a is", Ti, time.Now())
+		fmt.Println("wangjian sqlF2a is", Ti, time.Now(), SendCnt)
 	}
 	sr := s.acquireSendResult()
 	if len(requests) == 1 {

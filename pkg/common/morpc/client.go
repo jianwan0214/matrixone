@@ -221,8 +221,11 @@ func (c *client) Ping(ctx context.Context, backend string) error {
 		}
 
 		f, err := b.SendInternal(ctx, &flagOnlyMessage{flag: flagPing})
-		if err != nil && err == backendClosed {
-			continue
+		if err != nil {
+			if err == backendClosed {
+				continue
+			}
+			return err
 		}
 		_, err = f.Get()
 		f.Close()
@@ -367,7 +370,7 @@ func (c *client) triggerGCInactive(remote string) {
 }
 
 func (c *client) gcInactiveTask(ctx context.Context) {
-	c.logger.Info("gc inactive backends task started")
+	c.logger.Debug("gc inactive backends task started")
 	defer c.logger.Error("gc inactive backends task stopped")
 
 	for {

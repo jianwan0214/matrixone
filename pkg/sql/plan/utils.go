@@ -161,7 +161,7 @@ func decreaseDepth(expr *plan.Expr) (*plan.Expr, bool) {
 	return expr, correlated
 }
 
-func getJoinSide(expr *plan.Expr, leftTags, rightTags map[int32]*Binding, markTag int32) (side int8) {
+func getJoinSide(expr *plan.Expr, leftTags, rightTags map[int32]any, markTag int32) (side int8) {
 	switch exprImpl := expr.Expr.(type) {
 	case *plan.Expr_F:
 		for _, arg := range exprImpl.F.Args {
@@ -918,6 +918,12 @@ func GetColumnMapByExpr(expr *plan.Expr, tableDef *plan.TableDef, columnMap *map
 	}
 }
 
+func GetColumnMapByExprs(exprs []*plan.Expr, tableDef *plan.TableDef, columnMap *map[int]int) {
+	for _, expr := range exprs {
+		GetColumnMapByExpr(expr, tableDef, columnMap)
+	}
+}
+
 func GetColumnsByExpr(
 	expr *plan.Expr,
 	tableDef *plan.TableDef,
@@ -1033,7 +1039,7 @@ func CheckExprIsMonotonic(ctx context.Context, expr *plan.Expr) bool {
 	}
 }
 
-func getSortOrder(tableDef *plan.TableDef, colName string) int {
+func GetSortOrder(tableDef *plan.TableDef, colName string) int {
 	if tableDef.Pkey != nil {
 		pkNames := tableDef.Pkey.Names
 		for i := range pkNames {
