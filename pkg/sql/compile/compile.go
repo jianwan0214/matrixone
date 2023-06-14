@@ -1237,6 +1237,7 @@ func (c *Compile) compileTableScanWithNode(n *plan.Node, node engine.Node) *Scop
 	var ts timestamp.Timestamp
 	var db engine.Database
 	var rel engine.Relation
+	var pkey *plan.PrimaryKeyDef
 
 	attrs := make([]string, len(n.TableDef.Cols))
 	for j, col := range n.TableDef.Cols {
@@ -1297,6 +1298,13 @@ func (c *Compile) compileTableScanWithNode(n *plan.Node, node engine.Node) *Scop
 					Seqnum:    uint32(attr.Attr.Seqnum),
 				})
 				i++
+			} else if c, ok := def.(*engine.ConstraintDef); ok {
+				for _, ct := range c.Cts {
+					switch k := ct.(type) {
+					case *engine.PrimaryKeyDef:
+						pkey = k.Pkey
+					}
+				}
 			}
 		}
 		tblDef = &plan.TableDef{
@@ -1305,6 +1313,7 @@ func (c *Compile) compileTableScanWithNode(n *plan.Node, node engine.Node) *Scop
 			Version:       n.TableDef.Version,
 			Name:          n.TableDef.Name,
 			TableType:     n.TableDef.GetTableType(),
+			Pkey:          pkey,
 		}
 	}
 
@@ -2056,7 +2065,6 @@ func (c *Compile) newScopeListForRightJoin(childrenCount int, leftScopes []*Scop
 			ss = append(ss, tmp)
 		}
 	*/
-
 	// Force right join to execute on one CN due to right join issue
 	// Will fix in future
 	maxCpuNum := 1

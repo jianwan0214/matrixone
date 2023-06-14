@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"sync"
 	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/catalog"
@@ -104,20 +105,38 @@ func (s *Scope) SetContextRecursively(ctx context.Context) {
 // MergeRun range and run the scope's pre-scopes by go-routine, and finally run itself to do merge work.
 func (s *Scope) MergeRun(c *Compile) error {
 	errChan := make(chan error, len(s.PreScopes))
+	var wg sync.WaitGroup
 	for _, scope := range s.PreScopes {
+		wg.Add(1)
 		switch scope.Magic {
 		case Normal:
-			go func(cs *Scope) { errChan <- cs.Run(c) }(scope)
+			go func(cs *Scope) {
+				errChan <- cs.Run(c)
+				wg.Done()
+			}(scope)
 		case Merge, MergeInsert:
-			go func(cs *Scope) { errChan <- cs.MergeRun(c) }(scope)
+			go func(cs *Scope) {
+				errChan <- cs.MergeRun(c)
+				wg.Done()
+			}(scope)
 		case Remote:
-			go func(cs *Scope) { errChan <- cs.RemoteRun(c) }(scope)
+			go func(cs *Scope) {
+				errChan <- cs.RemoteRun(c)
+				wg.Done()
+			}(scope)
 		case Parallel:
-			go func(cs *Scope) { errChan <- cs.ParallelRun(c, cs.IsRemote) }(scope)
+			go func(cs *Scope) {
+				errChan <- cs.ParallelRun(c, cs.IsRemote)
+				wg.Done()
+			}(scope)
 		case Pushdown:
-			go func(cs *Scope) { errChan <- cs.PushdownRun() }(scope)
+			go func(cs *Scope) {
+				errChan <- cs.PushdownRun()
+				wg.Done()
+			}(scope)
 		}
 	}
+	defer wg.Wait()
 
 	s.Proc.Ctx = context.WithValue(s.Proc.Ctx, defines.EngineKey{}, c.e)
 	var errReceiveChan chan error
@@ -732,7 +751,6 @@ func (s *Scope) notifyAndReceiveFromRemote(errChan chan error) {
 	for i := range s.RemoteReceivRegInfos {
 		op := &s.RemoteReceivRegInfos[i]
 		go func(info *RemoteReceivRegInfo, reg *process.WaitRegister) {
-
 			streamSender, errStream := cnclient.GetStreamSender(info.FromAddr)
 			if errStream != nil {
 				close(reg.Ch)
@@ -777,12 +795,13 @@ func (s *Scope) notifyAndReceiveFromRemote(errChan chan error) {
 
 func receiveMsgAndForward(proc *process.Process, receiveCh chan morpc.Message, forwardCh chan *batch.Batch) error {
 	var val morpc.Message
+	var dataBuffer []byte
 	var ok bool
 	var m *pbpipeline.Message
 	for {
 		select {
 		case <-proc.Ctx.Done():
-			logutil.Errorf("proc ctx done during forward")
+			logutil.Warnf("proc ctx done during forward")
 			return nil
 		case val, ok = <-receiveCh:
 			if val == nil || !ok {
@@ -806,14 +825,15 @@ func receiveMsgAndForward(proc *process.Process, receiveCh chan morpc.Message, f
 		}
 
 		// normal receive
+		dataBuffer = append(dataBuffer, m.Data...)
 		switch m.GetSid() {
 		case pbpipeline.WaitingNext:
 			continue
 		case pbpipeline.Last:
-			if m.Checksum != crc32.ChecksumIEEE(m.Data) {
+			if m.Checksum != crc32.ChecksumIEEE(dataBuffer) {
 				return moerr.NewInternalError(proc.Ctx, "Packages delivered by morpc is broken")
 			}
-			bat, err := decodeBatch(proc.Mp(), nil, m.Data)
+			bat, err := decodeBatch(proc.Mp(), nil, dataBuffer)
 			if err != nil {
 				return err
 			}
@@ -824,6 +844,7 @@ func receiveMsgAndForward(proc *process.Process, receiveCh chan morpc.Message, f
 				// used for BroadCastJoin
 				forwardCh <- bat
 			}
+			dataBuffer = nil
 		}
 	}
 }
