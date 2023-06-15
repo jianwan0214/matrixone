@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	moruntime "github.com/matrixorigin/matrixone/pkg/common/runtime"
@@ -255,8 +254,8 @@ func (th *TxnHandler) CommitTxn() error {
 	storage := th.GetStorage()
 	ctx2, cancel := context.WithTimeout(
 		txnCtx,
-		//storage.Hints().CommitOrRollbackTimeout,
-		time.Hour,
+		storage.Hints().CommitOrRollbackTimeout,
+		//time.Hour,
 	)
 	defer cancel()
 	val, e := ses.GetSessionVar("mo_pk_check_by_dn")
