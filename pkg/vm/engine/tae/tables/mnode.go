@@ -31,7 +31,6 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/iface/txnif"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/index"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/index/indexwrapper"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/model"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/tables/updates"
 )
 
@@ -42,7 +41,6 @@ type memoryNode struct {
 	block       *baseBlock
 	writeSchema *catalog.Schema
 	data        *containers.Batch
-	prefix      []byte
 
 	//index for primary key : Art tree + ZoneMap.
 	pkIndex *indexwrapper.MutIndex
@@ -51,14 +49,19 @@ type memoryNode struct {
 func newMemoryNode(block *baseBlock) *memoryNode {
 	impl := new(memoryNode)
 	impl.block = block
-	impl.prefix = block.meta.MakeKey()
 
 	// Get the lastest schema, it will not be modified, so just keep the pointer
 	schema := block.meta.GetSchema()
 	impl.writeSchema = schema
-	opts := containers.Options{}
-	opts.Allocator = common.MutMemAllocator
-	impl.data = containers.BuildBatch(schema.AllNames(), schema.AllTypes(), opts)
+	// impl.data = containers.BuildBatchWithPool(
+	// 	schema.AllNames(), schema.AllTypes(), 0, block.rt.VectorPool.Memtable,
+	// )
+	opts := containers.Options{
+		Allocator: common.MutMemAllocator,
+	}
+	impl.data = containers.BuildBatch(
+		schema.AllNames(), schema.AllTypes(), opts,
+	)
 	impl.initPKIndex(schema)
 	impl.OnZeroCB = impl.close
 	return impl
@@ -142,13 +145,15 @@ func (node *memoryNode) GetColumnDataWindow(
 		return containers.FillConstVector(int(to-from), readSchema.ColDefs[col].Type, nil), nil
 	}
 	data := node.data.Vecs[idx]
-	vec = data.CloneWindow(int(from), int(to-from), common.DefaultAllocator)
+	vec = data.CloneWindowWithPool(int(from), int(to-from), node.block.rt.VectorPool.Transient)
+	// vec = data.CloneWindow(int(from), int(to-from), common.MutMemAllocator)
 	return
 }
 
 func (node *memoryNode) GetDataWindowOnWriteSchema(
 	from, to uint32) (bat *containers.BatchWithVersion, err error) {
-	inner := node.data.CloneWindow(int(from), int(to-from), common.DefaultAllocator)
+	inner := node.data.CloneWindowWithPool(int(from), int(to-from), node.block.rt.VectorPool.Transient)
+	// inner := node.data.CloneWindow(int(from), int(to-from), common.MutMemAllocator)
 	bat = &containers.BatchWithVersion{
 		Version:    node.writeSchema.Version,
 		NextSeqnum: uint16(node.writeSchema.Extra.NextColSeqnum),
@@ -160,21 +165,24 @@ func (node *memoryNode) GetDataWindowOnWriteSchema(
 
 func (node *memoryNode) GetDataWindow(
 	readSchema *catalog.Schema,
-	from, to uint32) (bat *containers.Batch, err error) {
+	colIdxes []int,
+	from, to uint32,
+) (bat *containers.Batch, err error) {
 	// manually clone data
-	bat = containers.NewBatchWithCapacity(len(readSchema.ColDefs))
+	bat = containers.NewBatchWithCapacity(len(colIdxes))
 	if node.data.Deletes != nil {
 		bat.Deletes = bat.WindowDeletes(int(from), int(to-from), false)
 	}
-	for _, col := range readSchema.ColDefs {
-		idx, ok := node.writeSchema.SeqnumMap[col.SeqNum]
+	for _, colIdx := range colIdxes {
+		colDef := readSchema.ColDefs[colIdx]
+		idx, ok := node.writeSchema.SeqnumMap[colDef.SeqNum]
 		var vec containers.Vector
 		if !ok {
-			vec = containers.FillConstVector(int(from-to), col.Type, nil)
+			vec = containers.FillConstVector(int(to-from), colDef.Type, nil)
 		} else {
-			vec = node.data.Vecs[idx].CloneWindow(int(from), int(to-from), common.DefaultAllocator)
+			vec = node.data.Vecs[idx].CloneWindowWithPool(int(from), int(to-from), node.block.rt.VectorPool.Transient)
 		}
-		bat.AddVector(col.Name, vec)
+		bat.AddVector(colDef.Name, vec)
 	}
 	return
 }
@@ -409,7 +417,7 @@ func (node *memoryNode) resolveInMemoryColumnDatas(
 	readSchema *catalog.Schema,
 	colIdxes []int,
 	skipDeletes bool,
-) (view *model.BlockView, err error) {
+) (view *containers.BlockView, err error) {
 	node.block.RLock()
 	defer node.block.RUnlock()
 	maxRow, visible, deSels, err := node.block.mvcc.GetVisibleRowLocked(txn)
@@ -417,13 +425,13 @@ func (node *memoryNode) resolveInMemoryColumnDatas(
 		// blk.RUnlock()
 		return
 	}
-	data, err := node.GetDataWindow(readSchema, 0, maxRow)
+	data, err := node.GetDataWindow(readSchema, colIdxes, 0, maxRow)
 	if err != nil {
 		return
 	}
-	view = model.NewBlockView()
-	for _, colIdx := range colIdxes {
-		view.SetData(colIdx, data.Vecs[colIdx])
+	view = containers.NewBlockView()
+	for i, colIdx := range colIdxes {
+		view.SetData(colIdx, data.Vecs[i])
 	}
 	if skipDeletes {
 		return
@@ -449,7 +457,7 @@ func (node *memoryNode) resolveInMemoryColumnData(
 	readSchema *catalog.Schema,
 	col int,
 	skipDeletes bool,
-) (view *model.ColumnView, err error) {
+) (view *containers.ColumnView, err error) {
 	node.block.RLock()
 	defer node.block.RUnlock()
 	maxRow, visible, deSels, err := node.block.mvcc.GetVisibleRowLocked(txn)
@@ -457,7 +465,7 @@ func (node *memoryNode) resolveInMemoryColumnData(
 		return
 	}
 
-	view = model.NewColumnView(col)
+	view = containers.NewColumnView(col)
 	var data containers.Vector
 	if data, err = node.GetColumnDataWindow(
 		readSchema,

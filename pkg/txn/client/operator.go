@@ -65,14 +65,14 @@ var (
 	}
 )
 
-// WithTxnReadyOnly setup readyonly flag
+// WithTxnReadyOnly setup readonly flag
 func WithTxnReadyOnly() TxnOption {
 	return func(tc *txnOperator) {
 		tc.option.readyOnly = true
 	}
 }
 
-// WithTxnDisable1PCOpt disable 1pc optimisation on distributed transaction. By default, mo enables 1pc
+// WithTxnDisable1PCOpt disable 1pc opt on distributed transaction. By default, mo enables 1pc
 // optimization for distributed transactions. For write operations, if all partitions' prepares are
 // executed successfully, then the transaction is considered committed and returned directly to the
 // client. Partitions' prepared data are committed asynchronously.
@@ -82,7 +82,7 @@ func WithTxnDisable1PCOpt() TxnOption {
 	}
 }
 
-// WithTxnCNCoordinator set cn txn coodinator
+// WithTxnCNCoordinator set cn txn coordinator
 func WithTxnCNCoordinator() TxnOption {
 	return func(tc *txnOperator) {
 		tc.option.coordinator = true
@@ -157,7 +157,6 @@ type txnOperator struct {
 	mu struct {
 		sync.RWMutex
 		closed       bool
-		epoch        uint64
 		txn          txn.TxnMeta
 		cachedWrites map[uint64][]txn.TxnRequest
 		lockTables   []lock.LockTable
@@ -192,6 +191,7 @@ func newTxnOperatorWithSnapshot(
 
 	tc := &txnOperator{sender: sender}
 	tc.mu.txn = v.Txn
+	tc.mu.txn.Mirror = true
 	tc.txnID = v.Txn.ID
 	tc.mu.lockTables = v.LockTables
 	tc.option.disable1PCOpt = v.Disable1PCOpt
@@ -274,13 +274,12 @@ func (tc *txnOperator) UpdateSnapshot(
 		minTS = tc.mu.txn.SnapshotTS
 	}
 
-	epoch, lastSnapshotTS, err := tc.timestampWaiter.GetTimestamp(
+	lastSnapshotTS, err := tc.timestampWaiter.GetTimestamp(
 		ctx,
 		minTS)
 	if err != nil {
 		return err
 	}
-	tc.mu.epoch = epoch
 	tc.mu.txn.SnapshotTS = lastSnapshotTS
 	return nil
 }
@@ -424,8 +423,11 @@ func (tc *txnOperator) AddLockTable(value lock.LockTable) error {
 		panic("lock in optimistic mode")
 	}
 
-	if err := tc.checkStatus(true); err != nil {
-		return err
+	// mirror txn can not check status, and the txn's status is on the creation cn of the txn.
+	if !tc.mu.txn.Mirror {
+		if err := tc.checkStatus(true); err != nil {
+			return err
+		}
 	}
 
 	return tc.doAddLockTableLocked(value)
@@ -545,11 +547,6 @@ func (tc *txnOperator) checkStatus(locked bool) error {
 	}
 
 	if tc.mu.closed {
-		return moerr.NewTxnClosedNoCtx(tc.txnID)
-	}
-
-	if tc.timestampWaiter != nil &&
-		tc.timestampWaiter.Epoch() != tc.mu.epoch {
 		return moerr.NewTxnClosedNoCtx(tc.txnID)
 	}
 	return nil
@@ -761,7 +758,7 @@ func (tc *txnOperator) checkResponseTxnStatusForCommit(resp txn.TxnResponse) err
 	case txn.TxnStatus_Committed, txn.TxnStatus_Aborted:
 		return nil
 	default:
-		panic(moerr.NewInternalErrorNoCtx("invalid respose status for commit, %v", txnMeta.Status))
+		panic(moerr.NewInternalErrorNoCtx("invalid response status for commit, %v", txnMeta.Status))
 	}
 }
 
@@ -779,7 +776,7 @@ func (tc *txnOperator) checkResponseTxnStatusForRollback(resp txn.TxnResponse) e
 	case txn.TxnStatus_Aborted:
 		return nil
 	default:
-		panic(moerr.NewInternalErrorNoCtx("invalud response status for rollback %v", txnMeta.Status))
+		panic(moerr.NewInternalErrorNoCtx("invalid response status for rollback %v", txnMeta.Status))
 	}
 }
 
