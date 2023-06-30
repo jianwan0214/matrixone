@@ -16,7 +16,6 @@ package insert
 
 import (
 	"bytes"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -58,10 +57,10 @@ func Prepare(proc *process.Process, arg any) error {
 // first parameter: true represents whether the current pipeline has ended
 // first parameter: false
 func Call(idx int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
-	Ti := time.Now()
+	//Ti := time.Now()
 	defer func() {
 		if proc.LoadTag2 {
-			fmt.Println("wangjian sqlA2 is", time.Since(Ti))
+			//fmt.Println("wangjian sqlA2 is", time.Since(Ti))
 		}
 		analyze(proc, idx)()
 	}()

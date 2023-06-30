@@ -16,12 +16,20 @@ package defines
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
+	"time"
 )
 
 // information from: https://dev.mysql.com/doc/internals/en/com-query-response.html
 // also in mysql 8.0.23 source code : include/field_types.h
+
+var TimeTag time.Time
+var TimeFlag bool
+func init() {
+	TimeFlag = false
+}
 
 type MysqlType uint8
 
@@ -170,6 +178,15 @@ func GetAccountId(ctx context.Context) uint32 {
 		return v.(uint32)
 	}
 	return 0
+}
+
+type MOTime struct{}
+func GetMoTime(ctx context.Context) time.Time {
+	if v := ctx.Value(MOTime{}); v != nil {
+		return v.(time.Time)
+	}
+	fmt.Println("wangchao sql??? is")
+	return time.Now()
 }
 
 // EngineKey use EngineKey{} to get engine from Context

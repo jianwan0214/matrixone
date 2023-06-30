@@ -179,7 +179,7 @@ func (c *client) Send(ctx context.Context, backend string, request Message) (*Fu
 		}
 
 		if id == 1000 {
-			fmt.Println("wangjian sqlK1 is", time.Now(), request)
+			fmt.Println("wangjian sqlK1 is", time.Now())
 		}
 		f, err := b.Send(ctx, request)
 		if id == 1000 {

@@ -43,7 +43,7 @@ func Call(_ int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
 		return false, nil
 	}
 	if proc.LoadTag2 {
-		fmt.Println("wangjian sql2a is", time.Now())
+		//fmt.Println("wangjian sql2a is", time.Now())
 	}
 	select {
 	case <-proc.Ctx.Done():
@@ -63,7 +63,7 @@ func Call(_ int, proc *process.Process, arg any, _ bool, _ bool) (bool, error) {
 	case reg.Ch <- bat:
 		proc.SetInputBatch(nil)
 		if proc.LoadTag2 {
-			fmt.Println("wangjian sql2d is", time.Now())
+			//fmt.Println("wangjian sql2d is", time.Now())
 		}
 		return false, nil
 	}

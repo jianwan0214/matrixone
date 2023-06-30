@@ -17,7 +17,6 @@ package morpc
 import (
 	"fmt"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -86,14 +85,13 @@ func (f *Future) Get() (Message, error) {
 	}
 	select {
 	case <-f.send.Ctx.Done():
-
 		if f.Flag {
 			fmt.Println("wangjian sqlL4 is", time.Now())
 		}
 		return nil, f.send.Ctx.Err()
 	case resp := <-f.c:
 		if f.Flag {
-			fmt.Println("wangjian sqlL5 is", time.Now(), resp)
+			fmt.Println("wangjian sqlL5 is", time.Now())
 		}
 		return resp, nil
 	case err := <-f.errC:
@@ -142,7 +140,6 @@ func (f *Future) done(response Message, cb func()) {
 	defer f.mu.Unlock()
 
 	if f.Flag {
-		debug.PrintStack()
 		fmt.Println("wangjian sqlM1 is", time.Now())
 	}
 	if !f.mu.closed && !f.timeout() {
@@ -151,7 +148,7 @@ func (f *Future) done(response Message, cb func()) {
 		}
 		f.mu.cb = cb
 		if f.Flag {
-			fmt.Println("wangjian sqlM2 is", time.Now(), response)
+			fmt.Println("wangjian sqlM2 is", time.Now())
 		}
 		f.c <- response
 		if f.Flag {

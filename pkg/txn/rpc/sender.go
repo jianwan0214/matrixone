@@ -121,7 +121,7 @@ func (s *sender) Send(ctx context.Context, requests []txn.TxnRequest) (*SendResu
 		sr.reset(requests)
 		resp, err := s.doSend(ctx, requests[0])
 		if id == 1000 {
-			fmt.Println("wangjian sqlF2b2 is", Ti, time.Now(), requests[0])
+			fmt.Println("wangjian sqlF2b2 is", Ti, time.Now())
 		}
 		if err != nil {
 			sr.Release()
@@ -198,7 +198,7 @@ func (s *sender) doSend(ctx context.Context, request txn.TxnRequest) (txn.TxnRes
 
 	id := defines.GetAccountId(ctx)
 	if id == 1000 {
-		fmt.Println("wangjian sqlJ1 is", time.Now(), request)
+		fmt.Println("wangjian sqlJ1 is", time.Now())
 	}
 	f, err := s.client.Send(ctx, dn.Address, &request)
 	if id == 1000 {

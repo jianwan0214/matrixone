@@ -2476,6 +2476,8 @@ func (mce *MysqlCmdExecutor) executeStmt(requestCtx context.Context,
 		//load data handle txn failure internally
 		if proc.LoadTag2 {
 			ses.GetTxnHandler().Flag = true
+			defines.TimeFlag = true
+			defines.TimeTag = time.Now()
 			fmt.Println("wangjian sql-1e is", time.Now())
 		} else {
 			ses.GetTxnHandler().Flag = false
@@ -2490,6 +2492,7 @@ func (mce *MysqlCmdExecutor) executeStmt(requestCtx context.Context,
 			return txnErr
 		}
 		if proc.LoadTag2 {
+			defines.TimeFlag = false
 			fmt.Println("wangjian sql-1g is", time.Now())
 		}
 		//response the client

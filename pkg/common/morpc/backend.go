@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -279,7 +280,11 @@ func (rb *remoteBackend) send(ctx context.Context, request Message, internal boo
 
 	Ti := time.Now()
 	if id == 1000 {
-		fmt.Println("wangjian sqlG1 is", Ti, time.Now(), f)
+		fmt.Println("wangjian sqlG1 is", Ti, time.Now())
+	} else {
+		Ti := time.Now()
+		f.send.Ctx = context.WithValue(f.send.Ctx, defines.MOTime{}, Ti)
+		fmt.Println("wangchao sql1 is", Ti)
 	}
 	
 	if err := rb.doSend(f); err != nil {
@@ -290,7 +295,7 @@ func (rb *remoteBackend) send(ctx context.Context, request Message, internal boo
 		return nil, err
 	}
 	if id == 1000 {
-		fmt.Println("wangjian sqlG3 is", Ti, time.Now(), f.send.Message)
+		fmt.Println("wangjian sqlG3 is", Ti, time.Now())
 	}
 	rb.active()
 	if id == 1000 {
@@ -327,6 +332,8 @@ func (rb *remoteBackend) doSend(f *Future) error {
 	for {
 		if id == 1000 {
 			fmt.Println("wangjian sqlH1 is", Ti, time.Now())
+		} else {
+			fmt.Println("wangchao sql3 is", "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a", f.send.Message.Size())//, string(debug.Stack()))
 		}
 		rb.stateMu.RLock()
 		if rb.stateMu.state == stateStopped {
@@ -453,7 +460,11 @@ func (rb *remoteBackend) writeLoop(ctx context.Context) {
 			written := messages[:0]
 			for _, f := range messages {
 				if f.Flag {
-					fmt.Println("wangjian sqlQ1 is", time.Now(), Ti)
+					fmt.Println("wangjian sqlQ1 is", "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a", defines.GetMoTime(f.send.Ctx), time.Now(), Ti)
+				} else {
+					Ti := time.Now()
+					f.send.Ctx = context.WithValue(f.send.Ctx, defines.MOTime{}, Ti)
+					fmt.Println("wangchao sql2 is", Ti, "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a", f.send.Message.Size(), time.Now())
 				}
 				id := f.getSendMessageID()
 				if stopped {
@@ -560,9 +571,15 @@ func (rb *remoteBackend) readLoop(ctx context.Context) {
 			rb.clean()
 			return
 		default:
+			if defines.TimeFlag {
+				fmt.Println("wangjian sqlP5 is", Ti2, time.Now())
+			}
 			Ti := time.Now()
 			ReceCnt++
 			msg, err := rb.conn.Read(goetty.ReadOptions{})
+			if defines.TimeFlag {
+				fmt.Println("wangjian sqlP6 is", Ti2, time.Now(), time.Since(Ti), err)
+			}
 			if err != nil {
 				rb.logger.Error("read from backend failed", zap.Error(err))
 				rb.inactiveReadLoop()
@@ -571,17 +588,21 @@ func (rb *remoteBackend) readLoop(ctx context.Context) {
 				return
 			}
 			resp := msg.(RPCMessage).Message
+			if defines.TimeFlag {
+				fmt.Println("wangjian sqlP7 is", Ti2, time.Now(), time.Since(Ti), "a_" + strconv.Itoa(int(resp.GetID())) + "_a")
+			}
 			if f, ok := rb.mu.futures[resp.GetID()]; ok {
 				if f.Flag {
-					fmt.Println("wangjian sqlP2 is", time.Now(), Ti, Ti2, err, resp)
-					fmt.Println("wangjian sqlP3 is", preTime, dur, ReceCnt)
+					fmt.Println("wangjian sqlP2 is", defines.GetMoTime(f.send.Ctx), time.Now(), Ti, Ti2, time.Since(Ti), err)
+					fmt.Println("wangjian sqlP3 is", preTime, dur, ReceCnt, "a_" + strconv.Itoa(int(resp.GetID())) + "_a")
 				}
 			} else {
-				fmt.Println("wangchao sqlP4 is", time.Now(), Ti, Ti2, time.Since(Ti), err)
+				if defines.TimeFlag {
+					fmt.Println("wangchao sqlP4 is", rb.conn.ID(), "a_" + strconv.Itoa(int(resp.GetID())) + "_a", resp.Size(), defines.GetMoTime(msg.(RPCMessage).Ctx), time.Now(), Ti, Ti2, time.Since(Ti), err)
+				}
 			}
 			preTime = Ti
 			dur = time.Since(Ti)
-			//msg2 = resp
 
 			rb.active()
 

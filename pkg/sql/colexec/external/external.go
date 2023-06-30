@@ -599,7 +599,7 @@ func ScanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 		proc.TotalCnt += 8192
 		TotalCnt += 8192
 		fmt.Println("wangjian sql5c is", TotalCnt, proc.TotalCnt, proc.Ti, time.Since(Ti))
-		if TotalCnt > 10e8 {//(1e9 + 1e8) {
+		if TotalCnt > 7e8 {//(1e9 + 1e8) {
 			param.Fileparam.End = true
 			return nil, nil
 		}
@@ -1387,7 +1387,7 @@ func ReadCountStringLimitSize(r *csv.Reader, ctx context.Context, cnt int, size 
 		}
 		record, err := r.Read()
 		if err == io.EOF {
-			fmt.Println("wangjian sql7b is")
+			//fmt.Println("wangjian sql7b is")
 			return i, true, nil
 		}
 		if err != nil {

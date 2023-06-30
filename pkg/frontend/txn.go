@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	moruntime "github.com/matrixorigin/matrixone/pkg/common/runtime"
@@ -265,7 +266,7 @@ func (th *TxnHandler) CommitTxn() error {
 	if val != nil {
 		ctx2 = context.WithValue(ctx2, defines.PkCheckByDN{}, val.(int8))
 	}
-	var err, err2 error
+	var err error
 	defer func() {
 		// metric count
 		tenant := ses.GetTenantName(nil)
@@ -280,31 +281,15 @@ func (th *TxnHandler) CommitTxn() error {
 	defer func() {
 		logDebugf(sessionInfo, "CommitTxn exit txnId:%s", txnId)
 	}()
-	//Ti := time.Now()
-	//fmt.Println("wangjian sqlD1 is", time.Now(), Ti)
 	if ses.GetTxnHandler().Flag {
 		ctx2 = context.WithValue(ctx2, defines.TenantIDKey{}, uint32(1000))
+		Ti2 := time.Now()
+		ctx2 = context.WithValue(ctx2, defines.MOTime{}, Ti2)
 		Ti, _ := ctx2.Deadline()
-		fmt.Println("wangjian sqlZ is", Ti, storage.Hints().CommitOrRollbackTimeout)
+		fmt.Println("wangjian sqlZ is", Ti2, Ti, storage.Hints().CommitOrRollbackTimeout)
 	}
-
-	if err = storage.Commit(ctx2, txnOp); err != nil {
-		//fmt.Println("wangjian sqlD2 is", time.Now(), Ti)
-		logErrorf(sessionInfo, "CommitTxn: storage commit failed. txnId:%s error:%v", txnId, err)
-		if txnOp != nil {
-			err2 = txnOp.Rollback(ctx2)
-			if err2 != nil {
-				logErrorf(sessionInfo, "CommitTxn: txn operator rollback failed. txnId:%s error:%v", txnId, err2)
-			}
-		}
-		th.SetTxnOperatorInvalid()
-		return err
-	}
-	//fmt.Println("wangjian sqlD3 is", time.Now(), Ti)
 	if txnOp != nil {
-		//fmt.Println("wangjian sqlD4 is", time.Now(), Ti)
 		err = txnOp.Commit(ctx2)
-		//fmt.Println("wangjian sqlD5 is", time.Now(), Ti)
 		if err != nil {
 			th.SetTxnOperatorInvalid()
 			logErrorf(sessionInfo, "CommitTxn: txn operator commit failed. txnId:%s error:%v", txnId, err)
@@ -340,7 +325,7 @@ func (th *TxnHandler) RollbackTxn() error {
 		storage.Hints().CommitOrRollbackTimeout,
 	)
 	defer cancel()
-	var err, err2 error
+	var err error
 	defer func() {
 		// metric count
 		tenant := ses.GetTenantName(nil)
@@ -356,17 +341,6 @@ func (th *TxnHandler) RollbackTxn() error {
 	defer func() {
 		logDebugf(sessionInfo, "RollbackTxn exit txnId:%s", txnId)
 	}()
-	if err = storage.Rollback(ctx2, txnOp); err != nil {
-		logErrorf(sessionInfo, "RollbackTxn: storage rollback failed. txnId:%s error:%v", txnId, err)
-		if txnOp != nil {
-			err2 = txnOp.Rollback(ctx2)
-			if err2 != nil {
-				logErrorf(sessionInfo, "RollbackTxn: txn operator rollback failed. txnId:%s error:%v", txnId, err2)
-			}
-		}
-		th.SetTxnOperatorInvalid()
-		return err
-	}
 	if txnOp != nil {
 		err = txnOp.Rollback(ctx2)
 		if err != nil {
