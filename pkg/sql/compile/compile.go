@@ -322,8 +322,7 @@ func (c *Compile) Run(_ uint64) error {
 	if err := c.runOnce(); err != nil {
 		//  if the error is ErrTxnNeedRetry and the transaction is RC isolation, we need to retry the statement
 		if moerr.IsMoErrCode(err, moerr.ErrTxnNeedRetry) &&
-			c.proc.TxnOperator.Txn().IsRCIsolation() &&
-			c.info.Typ == plan2.ExecTypeTP {
+			c.proc.TxnOperator.Txn().IsRCIsolation() {
 			// clear the workspace of the failed statement
 			if err = c.proc.TxnOperator.GetWorkspace().RollbackLastStatement(c.ctx); err != nil {
 				return err
@@ -1043,7 +1042,7 @@ func (c *Compile) compilePlanScope(ctx context.Context, step int32, curNodeIdx i
 		}
 		currentFirstFlag := c.anal.isFirst
 		for i := range ss {
-			lockOpArg, err := constructLockOp(n, ss[i].Proc)
+			lockOpArg, err := constructLockOp(n, ss[i].Proc, c.e)
 			if err != nil {
 				return nil, err
 			}
@@ -1181,8 +1180,8 @@ func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope
 			ID2Addr = make(map[int]int, 0)
 			for i := 0; i < len(c.cnList); i++ {
 				tmp := mcpu
-				if c.cnList[i].Mcpu > external.S3_PARALLEL_MAXNUM {
-					mcpu += external.S3_PARALLEL_MAXNUM
+				if c.cnList[i].Mcpu > external.S3ParallelMaxnum {
+					mcpu += external.S3ParallelMaxnum
 				} else {
 					mcpu += c.cnList[i].Mcpu
 				}
@@ -1243,7 +1242,7 @@ func (c *Compile) compileExternScan(ctx context.Context, n *plan.Node) ([]*Scope
 	for i := 0; i < len(fileList); i++ {
 		param.Filepath = fileList[i]
 		if param.Parallel {
-			arr, err := external.ReadFileOffset(param, c.proc, mcpu, fileSize[i])
+			arr, err := external.ReadFileOffset(param, mcpu, fileSize[i])
 			fileOffset = append(fileOffset, arr)
 			if err != nil {
 				return nil, err

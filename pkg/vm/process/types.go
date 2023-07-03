@@ -190,6 +190,8 @@ type Process struct {
 
 	Ti time.Time
 
+	SQL string
+
 	TotalCnt int
 
 	LastInsertID *uint64

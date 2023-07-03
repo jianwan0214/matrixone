@@ -17,9 +17,13 @@ package morpc
 import (
 	"fmt"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/matrixorigin/matrixone/pkg/defines"
 )
 
 func newFuture(releaseFunc func(f *Future)) *Future {
@@ -72,7 +76,14 @@ func (f *Future) Get() (Message, error) {
 	// waiting in the send queue after the Get returns, causing concurrent reading and writing on the
 	// request.
 	if f.Flag {
-		fmt.Println("wangjian sqlL1 is", time.Now())
+		Ti := time.Now()
+		fmt.Println("wangjian sqlL is", Ti, string(debug.Stack()))
+		fmt.Println("wangjian sqlL1 is", Ti, "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a")
+	} else {
+		if defines.TimeFlag {
+			fmt.Println("wangchao sqlL is", time.Now(), string(debug.Stack()))
+			fmt.Println("wangchao sqlL1 is", "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a")
+		}
 	}
 	if err := f.waitSendCompleted(); err != nil {
 		if f.Flag {

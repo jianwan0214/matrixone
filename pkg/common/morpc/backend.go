@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -460,9 +461,13 @@ func (rb *remoteBackend) writeLoop(ctx context.Context) {
 			written := messages[:0]
 			for _, f := range messages {
 				if f.Flag {
+					fmt.Println("wangjian sqlQ is", string(debug.Stack()))
 					fmt.Println("wangjian sqlQ1 is", "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a", defines.GetMoTime(f.send.Ctx), time.Now(), Ti)
 				} else {
 					Ti := time.Now()
+					if defines.TimeFlag {
+						fmt.Println("wangchao sqlQ is", "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a", string(debug.Stack()))
+					}
 					f.send.Ctx = context.WithValue(f.send.Ctx, defines.MOTime{}, Ti)
 					fmt.Println("wangchao sql2 is", Ti, "a_" + strconv.Itoa(int(f.send.Message.GetID())) + "_a", f.send.Message.Size(), time.Now())
 				}
@@ -590,6 +595,7 @@ func (rb *remoteBackend) readLoop(ctx context.Context) {
 			resp := msg.(RPCMessage).Message
 			if defines.TimeFlag {
 				fmt.Println("wangjian sqlP7 is", Ti2, time.Now(), time.Since(Ti), "a_" + strconv.Itoa(int(resp.GetID())) + "_a")
+				fmt.Println("wangjian sqlP8 is", Ti2, msg.(RPCMessage).Message)
 			}
 			if f, ok := rb.mu.futures[resp.GetID()]; ok {
 				if f.Flag {
