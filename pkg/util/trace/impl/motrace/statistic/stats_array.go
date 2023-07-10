@@ -18,9 +18,12 @@ import (
 	"strconv"
 )
 
-type StatsArray struct {
-	arr []uint64
-}
+type StatsArray [StatsArrayLength]float64
+
+const (
+	Decimal128ToFloat64Scale = 5
+	Float64PrecForMemorySize = 3
+)
 
 const (
 	StatsArrayVersion = StatsArrayVersion1
@@ -40,41 +43,62 @@ const (
 )
 
 func NewStatsArray() *StatsArray {
-	return &StatsArray{
-		arr: make([]uint64, StatsArrayLength),
-	}
+	var s StatsArray
+	return s.Init()
 }
 
-func (s *StatsArray) GetVersion() uint64         { return s.arr[StatsArrayIndexVersion] }
-func (s *StatsArray) GetTimeConsumed() uint64    { return s.arr[StatsArrayIndexTimeConsumed] }    // unit: ns
-func (s *StatsArray) GetMemorySize() uint64      { return s.arr[StatsArrayIndexMemorySize] }      // unit: byte
-func (s *StatsArray) GetS3IOInputCount() uint64  { return s.arr[StatsArrayIndexS3IOInputCount] }  // unit: count
-func (s *StatsArray) GetS3IOOutputCount() uint64 { return s.arr[StatsArrayIndexS3IOOutputCount] } // unit: count
+func (s *StatsArray) Init() *StatsArray {
+	return s.WithVersion(StatsArrayVersion)
+}
 
-func (s *StatsArray) WithVersion(v uint64) *StatsArray { s.arr[StatsArrayIndexVersion] = v; return s }
-func (s *StatsArray) WithTimeConsumed(v uint64) *StatsArray {
-	s.arr[StatsArrayIndexTimeConsumed] = v
+func (s *StatsArray) Reset() *StatsArray {
+	return s.WithVersion(StatsArrayVersion).WithTimeConsumed(0).WithMemorySize(0).WithS3IOInputCount(0).WithS3IOOutputCount(0)
+}
+
+func (s *StatsArray) GetVersion() float64         { return (*s)[StatsArrayIndexVersion] }
+func (s *StatsArray) GetTimeConsumed() float64    { return (*s)[StatsArrayIndexTimeConsumed] }    // unit: ns
+func (s *StatsArray) GetMemorySize() float64      { return (*s)[StatsArrayIndexMemorySize] }      // unit: byte
+func (s *StatsArray) GetS3IOInputCount() float64  { return (*s)[StatsArrayIndexS3IOInputCount] }  // unit: count
+func (s *StatsArray) GetS3IOOutputCount() float64 { return (*s)[StatsArrayIndexS3IOOutputCount] } // unit: count
+
+func (s *StatsArray) WithVersion(v float64) *StatsArray { (*s)[StatsArrayIndexVersion] = v; return s }
+func (s *StatsArray) WithTimeConsumed(v float64) *StatsArray {
+	(*s)[StatsArrayIndexTimeConsumed] = v
 	return s
 }
-func (s *StatsArray) WithMemorySize(v uint64) *StatsArray {
-	s.arr[StatsArrayIndexMemorySize] = v
+func (s *StatsArray) WithMemorySize(v float64) *StatsArray {
+	(*s)[StatsArrayIndexMemorySize] = v
 	return s
 }
-func (s *StatsArray) WithS3IOInputCount(v uint64) *StatsArray {
-	s.arr[StatsArrayIndexS3IOInputCount] = v
+func (s *StatsArray) WithS3IOInputCount(v float64) *StatsArray {
+	(*s)[StatsArrayIndexS3IOInputCount] = v
 	return s
 }
-func (s *StatsArray) WithS3IOOutputCount(v uint64) *StatsArray {
-	s.arr[StatsArrayIndexS3IOOutputCount] = v
+func (s *StatsArray) WithS3IOOutputCount(v float64) *StatsArray {
+	(*s)[StatsArrayIndexS3IOOutputCount] = v
 	return s
 }
 
 func (s *StatsArray) ToJsonString() []byte {
-	return ArrayUint64ToJsonString(s.arr)
+	return StatsArrayToJsonString((*s)[:])
 }
 
-// ArrayUint64ToJsonString return json arr format
-func ArrayUint64ToJsonString(arr []uint64) []byte {
+func (s *StatsArray) Add(src *StatsArray) *StatsArray {
+	dstLen := len(*src)
+	if len(*s) < len(*src) {
+		dstLen = len(*s)
+	}
+	for idx := 1; idx < dstLen; idx++ {
+		(*s)[idx] += (*src)[idx]
+	}
+	return s
+}
+
+// StatsArrayToJsonString return json arr format
+// example:
+// [1,0,0,0,0] got `[1,0,0,0,0]`
+// [1,2,3,4,5] got `[1,2,3.000,4,5]`
+func StatsArrayToJsonString(arr []float64) []byte {
 	// len([1,184467440737095516161,18446744073709551616,18446744073709551616,18446744073709551616]") = 88
 	buf := make([]byte, 0, 128)
 	buf = append(buf, '[')
@@ -82,12 +106,20 @@ func ArrayUint64ToJsonString(arr []uint64) []byte {
 		if idx > 0 {
 			buf = append(buf, ',')
 		}
-		buf = strconv.AppendUint(buf, v, 10)
+		if v == 0.0 {
+			buf = append(buf, '0')
+		} else if idx == StatsArrayIndexMemorySize {
+			buf = strconv.AppendFloat(buf, v, 'f', Float64PrecForMemorySize, 64)
+		} else {
+			buf = strconv.AppendFloat(buf, v, 'f', 0, 64)
+		}
 	}
 	buf = append(buf, ']')
 	return buf
 }
 
-var DefaultStatsArrayJsonString = NewStatsArray().
-	WithVersion(StatsArrayVersion).
-	ToJsonString()
+var initStatsArray = StatsArray{}
+
+var DefaultStatsArray = *initStatsArray.Init()
+
+var DefaultStatsArrayJsonString = initStatsArray.Init().ToJsonString()
