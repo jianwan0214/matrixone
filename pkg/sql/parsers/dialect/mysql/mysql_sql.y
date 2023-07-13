@@ -343,7 +343,7 @@ import (
 %token <str> ADMIN_NAME RANDOM SUSPEND ATTRIBUTE HISTORY REUSE CURRENT OPTIONAL FAILED_LOGIN_ATTEMPTS PASSWORD_LOCK_TIME UNBOUNDED SECONDARY RESTRICTED
 
 // User
-%token <str> USER IDENTIFIED CIPHER ISSUER X509 SUBJECT SAN REQUIRE SSL NONE PASSWORD
+%token <str> USER IDENTIFIED CIPHER ISSUER X509 SUBJECT SAN REQUIRE SSL NONE PASSWORD SHARED EXCLUSIVE
 %token <str> MAX_QUERIES_PER_HOUR MAX_UPDATES_PER_HOUR MAX_CONNECTIONS_PER_HOUR MAX_USER_CONNECTIONS
 
 // Explain
@@ -384,7 +384,7 @@ import (
 %token <str> RECURSIVE CONFIG DRAINER
 
 // Match
-%token <str> MATCH AGAINST BOOLEAN LANGUAGE WITH QUERY EXPANSION
+%token <str> MATCH AGAINST BOOLEAN LANGUAGE WITH QUERY EXPANSION WITHOUT VALIDATION
 
 // Built-in function
 %token <str> ADDDATE BIT_AND BIT_OR BIT_XOR CAST COUNT APPROX_COUNT_DISTINCT
@@ -518,7 +518,7 @@ import (
 %type <columnAttribute> column_attribute_elem keys
 %type <columnAttributes> column_attribute_list column_attribute_list_opt
 %type <tableOptions> table_option_list_opt table_option_list
-%type <str> charset_name storage_opt collate_name column_format storage_media algorithm_type able_type space_type
+%type <str> charset_name storage_opt collate_name column_format storage_media algorithm_type able_type space_type lock_type with_type
 %type <rowFormatType> row_format_options
 %type <int64Val> field_length_opt max_file_size_opt
 %type <matchType> match match_opt
@@ -2670,6 +2670,14 @@ alter_option:
     {
         $$ = tree.NewTableOptionCharset($1)
     }
+|   LOCK equal_opt lock_type
+    {
+        $$ = tree.NewTableOptionCharset($1)
+    }
+|   with_type VALIDATION
+    {
+        $$ = tree.NewTableOptionCharset($1)
+    }
 
 algorithm_type:
     DEFAULT
@@ -2684,6 +2692,16 @@ able_type:
 space_type:
     DISCARD
 |   IMPORT
+
+lock_type:
+    DEFAULT
+|   NONE
+|   SHARED
+|   EXCLUSIVE
+
+with_type:
+    WITHOUT
+|   WITH   
 
 pos_info:
     {
